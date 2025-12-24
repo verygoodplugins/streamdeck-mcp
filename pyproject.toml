@@ -1,0 +1,29 @@
+[project]
+name = "streamdeck-mcp"
+version = "0.1.0"
+description = "MCP server for Elgato Stream Deck control — set buttons, manage pages, wire actions"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Jack Arturo"}
+]
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.6.0",
+    "streamdeck>=0.9.0",
+    "pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
