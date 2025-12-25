@@ -5,7 +5,6 @@ These tests mock the Stream Deck hardware so they can run without a physical dev
 """
 
 import json
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -21,12 +20,10 @@ sys.modules["StreamDeck"] = mock_streamdeck
 sys.modules["StreamDeck.DeviceManager"] = mock_streamdeck
 sys.modules["StreamDeck.ImageHelpers"] = mock_streamdeck.ImageHelpers
 
-from server import (
+from server import (  # noqa: E402
     StreamDeckState,
-    StreamDeckError,
     DeckNotConnectedError,
     ValidationError,
-    CONFIG_DIR,
 )
 
 
