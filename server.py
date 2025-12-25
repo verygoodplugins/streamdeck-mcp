@@ -118,6 +118,7 @@ class StreamDeckState:
         self._brightness: int = 70
         self._last_connect_attempt: float = 0
         self._connect_attempts: int = 0
+        self._font_cache: dict[int | str, Any] = {}  # int for sizes, "default" for fallback
         self._ensure_config_dir()
         self._load_state()
 
@@ -354,7 +355,7 @@ class StreamDeckState:
             return {"connected": False}
 
         try:
-            layout = self.deck.key_layout()
+            layout = self.deck.key_layout()  # Returns (rows, cols)
             return {
                 "connected": True,
                 "id": self.deck.id(),
@@ -362,8 +363,8 @@ class StreamDeckState:
                 "serial": self.deck.get_serial_number(),
                 "firmware": self.deck.get_firmware_version(),
                 "key_count": self.deck.key_count(),
-                "columns": layout[0],
-                "rows": layout[1],
+                "columns": layout[1],
+                "rows": layout[0],
                 "key_format": {
                     "size": self.deck.key_image_format()["size"],
                     "format": self.deck.key_image_format()["format"],
@@ -383,6 +384,8 @@ class StreamDeckState:
         text: Optional[str] = None,
         bg_color: tuple[int, int, int] = DEFAULT_BG_COLOR,
         text_color: tuple[int, int, int] = DEFAULT_TEXT_COLOR,
+        font_size: int = 14,
+        save_state: bool = True,
     ) -> bool:
         """
         Set a button's image — either from file or generated with text.
@@ -393,6 +396,8 @@ class StreamDeckState:
             text: Text label to display
             bg_color: Background RGB color
             text_color: Text RGB color
+            font_size: Font size in points (default: 14)
+            save_state: Whether to persist state to disk (default: True)
 
         Returns:
             True if successful
@@ -413,19 +418,24 @@ class StreamDeckState:
             key_format = self.deck.key_image_format()
             key_size = key_format["size"]
 
-            if image_path and Path(image_path).expanduser().exists():
-                # Load image from file
+            if image_path:
                 img_path = Path(image_path).expanduser()
-                img = Image.open(img_path)
-                img = PILHelper.create_scaled_image(self.deck, img)
-                logger.debug(f"Loaded image from {img_path}")
-            else:
+                if img_path.exists():
+                    # Load image from file
+                    img = Image.open(img_path)
+                    img = PILHelper.create_scaled_image(self.deck, img)
+                    logger.debug(f"Loaded image from {img_path}")
+                else:
+                    logger.warning(f"Image not found: {img_path}, falling back to text/color")
+                    image_path = None  # Fall through to text/color generation
+
+            if not image_path:
                 # Generate image with text/color
                 img = Image.new("RGB", key_size, bg_color)
 
                 if text:
                     draw = ImageDraw.Draw(img)
-                    font = self._get_font(14)
+                    font = self._get_font(font_size)
 
                     # Center text
                     bbox = draw.textbbox((0, 0), text, font=font)
@@ -448,8 +458,10 @@ class StreamDeckState:
                 "image_path": image_path,
                 "bg_color": list(bg_color),
                 "text_color": list(text_color),
+                "font_size": font_size,
             }
-            self._save_state()
+            if save_state:
+                self._save_state()
 
             logger.debug(f"Set button {key}: text='{text}', bg={bg_color}")
             return True
@@ -460,7 +472,7 @@ class StreamDeckState:
 
     def _get_font(self, size: int) -> Any:
         """
-        Get a font for button text rendering.
+        Get a font for button text rendering (cached).
 
         Args:
             size: Font size in points
@@ -468,6 +480,13 @@ class StreamDeckState:
         Returns:
             PIL ImageFont object
         """
+        if size in self._font_cache:
+            return self._font_cache[size]
+
+        # Check if we already cached the default font fallback
+        if "default" in self._font_cache:
+            return self._font_cache["default"]
+
         font_paths = [
             "/System/Library/Fonts/Helvetica.ttc",  # macOS
             "/System/Library/Fonts/SFNSText.ttf",   # macOS newer
@@ -478,14 +497,28 @@ class StreamDeckState:
 
         for font_path in font_paths:
             try:
-                return ImageFont.truetype(font_path, size)
+                font = ImageFont.truetype(font_path, size)
+                self._font_cache[size] = font
+                return font
             except (OSError, IOError):
                 continue
 
-        logger.debug("Using default PIL font")
-        return ImageFont.load_default()
+        # Fallback to default font (fixed size, doesn't respect size parameter)
+        logger.warning(
+            f"No TrueType font found, using PIL default. "
+            f"Font size {size} will be ignored. Install a TTF font for custom sizes."
+        )
+        font = ImageFont.load_default()
+        self._font_cache["default"] = font  # Cache once, not per size
+        return font
 
-    def set_button_action(self, key: int, action: str, action_type: str = "command") -> bool:
+    def set_button_action(
+        self,
+        key: int,
+        action: str,
+        action_type: str = "command",
+        save_state: bool = True,
+    ) -> bool:
         """
         Set what happens when a button is pressed.
 
@@ -493,6 +526,7 @@ class StreamDeckState:
             key: Button index
             action: Action string. Use 'page:name' for page switch, or shell command.
             action_type: Type of action ('command' or 'page')
+            save_state: Whether to persist state to disk (default: True)
 
         Returns:
             True if successful
@@ -509,10 +543,58 @@ class StreamDeckState:
             "action": action,
             "type": action_type,
         }
-        self._save_state()
+        if save_state:
+            self._save_state()
 
         logger.debug(f"Set action for button {key}: {action}")
         return True
+
+    def set_buttons(self, buttons: list[dict[str, Any]]) -> int:
+        """
+        Set multiple buttons at once (more efficient than individual calls).
+
+        Args:
+            buttons: List of button configurations. Each dict can have:
+                - key (required): Button index
+                - text: Text label
+                - image_path: Path to image file
+                - bg_color: Background RGB color [r, g, b]
+                - text_color: Text RGB color [r, g, b]
+                - font_size: Font size in points
+                - action: Action when pressed
+
+        Returns:
+            Number of buttons successfully configured
+        """
+        self._check_deck_connected()
+
+        configured = 0
+        for btn in buttons:
+            if "key" not in btn:
+                logger.warning("Skipping button config: missing required 'key' field")
+                continue
+
+            try:
+                key = btn["key"]
+                self.set_button_image(
+                    key,
+                    image_path=btn.get("image_path"),
+                    text=btn.get("text"),
+                    bg_color=tuple(btn.get("bg_color", DEFAULT_BG_COLOR)),
+                    text_color=tuple(btn.get("text_color", DEFAULT_TEXT_COLOR)),
+                    font_size=btn.get("font_size", 14),
+                    save_state=False,  # Don't save after each button
+                )
+                if "action" in btn:
+                    self.set_button_action(key, btn["action"], save_state=False)
+                configured += 1
+            except (ValidationError, StreamDeckError) as e:
+                logger.warning(f"Skipping button {btn.get('key', '?')}: {e}")
+
+        # Single save at the end
+        self._save_state()
+        logger.info(f"Configured {configured} buttons in batch")
+        return configured
 
     def create_page(self, name: str) -> bool:
         """
@@ -573,6 +655,7 @@ class StreamDeckState:
                         text=config.get("text"),
                         bg_color=tuple(config.get("bg_color", DEFAULT_BG_COLOR)),
                         text_color=tuple(config.get("text_color", DEFAULT_TEXT_COLOR)),
+                        font_size=config.get("font_size", 14),
                     )
                 except (ValueError, ValidationError) as e:
                     logger.warning(f"Skipping invalid button config: {e}")
@@ -670,6 +753,61 @@ class StreamDeckState:
             logger.error(f"Failed to clear button {key}: {e}")
             raise StreamDeckError(f"Failed to clear button {key}: {e}")
 
+    def get_button(self, key: int) -> dict[str, Any]:
+        """
+        Get the current configuration of a button.
+
+        Args:
+            key: Button index
+
+        Returns:
+            Dict with button configuration
+        """
+        self._validate_key(key)
+
+        page_config = self.pages.get(self.current_page, {})
+        button_config = page_config.get(str(key), {})
+
+        action_config = self.button_callbacks.get(self.current_page, {}).get(str(key), {})
+
+        return {
+            "key": key,
+            "text": button_config.get("text"),
+            "image_path": button_config.get("image_path"),
+            "bg_color": button_config.get("bg_color", list(DEFAULT_BG_COLOR)),
+            "text_color": button_config.get("text_color", list(DEFAULT_TEXT_COLOR)),
+            "font_size": button_config.get("font_size", 14),
+            "action": action_config.get("action"),
+        }
+
+    def clear_all(self) -> int:
+        """
+        Clear all buttons on the current page.
+
+        Returns:
+            Number of buttons cleared
+        """
+        self._check_deck_connected()
+
+        try:
+            key_count = self.deck.key_count()
+
+            # Clear all button images
+            for key in range(key_count):
+                self.deck.set_key_image(key, None)
+
+            # Clear page state
+            self.pages[self.current_page] = {}
+            if self.current_page in self.button_callbacks:
+                self.button_callbacks[self.current_page] = {}
+
+            self._save_state()
+            logger.info(f"Cleared all {key_count} buttons on page '{self.current_page}'")
+            return key_count
+        except Exception as e:
+            logger.error(f"Failed to clear all buttons: {e}")
+            raise StreamDeckError(f"Failed to clear all buttons: {e}")
+
     def disconnect(self) -> None:
         """Clean up deck connection."""
         if self.deck:
@@ -713,7 +851,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="streamdeck_set_button",
-            description="Set a button's appearance and optional action. Use text for labels or image_path for icons.",
+            description="Set a button's appearance and optional action. Use text for labels or image_path for icons (optimal: 72x72 pixels).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -727,7 +865,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "image_path": {
                         "type": "string",
-                        "description": "Path to image file (PNG/JPG) to display",
+                        "description": "Path to image file (PNG/JPG) to display. Optimal size: 72x72 pixels.",
                     },
                     "bg_color": {
                         "type": "array",
@@ -739,12 +877,66 @@ async def list_tools() -> list[Tool]:
                         "items": {"type": "integer"},
                         "description": "Text RGB color [r, g, b] (0-255 each)",
                     },
+                    "font_size": {
+                        "type": "integer",
+                        "description": "Font size in points (default: 14)",
+                    },
                     "action": {
                         "type": "string",
                         "description": "Action when pressed. Use 'page:name' to switch pages, or a shell command.",
                     },
                 },
                 "required": ["key"],
+            },
+        ),
+        Tool(
+            name="streamdeck_set_buttons",
+            description="Set multiple buttons at once (faster than individual calls). Use for bulk configuration.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "buttons": {
+                        "type": "array",
+                        "description": "Array of button configurations",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {
+                                    "type": "integer",
+                                    "description": "Button index (0-based)",
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "description": "Text label",
+                                },
+                                "image_path": {
+                                    "type": "string",
+                                    "description": "Path to image file",
+                                },
+                                "bg_color": {
+                                    "type": "array",
+                                    "items": {"type": "integer"},
+                                    "description": "Background RGB [r, g, b]",
+                                },
+                                "text_color": {
+                                    "type": "array",
+                                    "items": {"type": "integer"},
+                                    "description": "Text RGB [r, g, b]",
+                                },
+                                "font_size": {
+                                    "type": "integer",
+                                    "description": "Font size in points",
+                                },
+                                "action": {
+                                    "type": "string",
+                                    "description": "Action when pressed",
+                                },
+                            },
+                            "required": ["key"],
+                        },
+                    },
+                },
+                "required": ["buttons"],
             },
         ),
         Tool(
@@ -759,6 +951,28 @@ async def list_tools() -> list[Tool]:
                     },
                 },
                 "required": ["key"],
+            },
+        ),
+        Tool(
+            name="streamdeck_get_button",
+            description="Get the current configuration of a button",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "integer",
+                        "description": "Button index to query",
+                    },
+                },
+                "required": ["key"],
+            },
+        ),
+        Tool(
+            name="streamdeck_clear_all",
+            description="Clear all buttons on the current page",
+            inputSchema={
+                "type": "object",
+                "properties": {},
             },
         ),
         Tool(
@@ -867,19 +1081,34 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             image_path = arguments.get("image_path")
             bg_color = tuple(arguments.get("bg_color", DEFAULT_BG_COLOR))
             text_color = tuple(arguments.get("text_color", DEFAULT_TEXT_COLOR))
+            font_size = arguments.get("font_size", 14)
             action = arguments.get("action")
 
-            state.set_button_image(key, image_path, text, bg_color, text_color)
+            state.set_button_image(key, image_path, text, bg_color, text_color, font_size)
 
             if action:
                 state.set_button_action(key, action)
 
             return [TextContent(type="text", text=f"✅ Button {key} configured")]
 
+        elif name == "streamdeck_set_buttons":
+            buttons = arguments["buttons"]
+            count = state.set_buttons(buttons)
+            return [TextContent(type="text", text=f"✅ Configured {count} buttons")]
+
         elif name == "streamdeck_clear_button":
             key = arguments["key"]
             state.clear_button(key)
             return [TextContent(type="text", text=f"✅ Button {key} cleared")]
+
+        elif name == "streamdeck_get_button":
+            key = arguments["key"]
+            config = state.get_button(key)
+            return [TextContent(type="text", text=json.dumps(config, indent=2))]
+
+        elif name == "streamdeck_clear_all":
+            count = state.clear_all()
+            return [TextContent(type="text", text=f"✅ Cleared {count} buttons")]
 
         elif name == "streamdeck_set_brightness":
             percent = arguments["percent"]

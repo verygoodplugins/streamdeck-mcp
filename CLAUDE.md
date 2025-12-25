@@ -63,6 +63,18 @@ server.py
 ## Key Concepts
 
 - **Button indexing**: 0-based, left-to-right, top-to-bottom. 5x3 deck = keys 0-14.
+
+```
+Stream Deck Original (15 keys):
+┌────┬────┬────┬────┬────┐
+│  0 │  1 │  2 │  3 │  4 │
+├────┼────┼────┼────┼────┤
+│  5 │  6 │  7 │  8 │  9 │
+├────┼────┼────┼────┼────┤
+│ 10 │ 11 │ 12 │ 13 │ 14 │
+└────┴────┴────┴────┴────┘
+```
+
 - **Pages**: Named profiles. "main" is default and undeletable.
 - **Actions**: `page:name` for page switching, or shell commands (requires running server).
 - **Image generation**: Pillow creates button images from text/colors. Falls back gracefully if fonts unavailable.
