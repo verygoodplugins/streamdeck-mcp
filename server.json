@@ -6,12 +6,12 @@
     "url": "https://github.com/verygoodplugins/streamdeck-mcp",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.1.2",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "streamdeck-mcp",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "transport": {
         "type": "stdio"
       },

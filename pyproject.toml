@@ -1,6 +1,6 @@
 [project]
 name = "streamdeck-mcp"
-version = "0.1.0"
+version = "0.1.2"
 description = "MCP server for Elgato Stream Deck control — set buttons, manage pages, wire actions"
 readme = "README.md"
 license = {text = "MIT"}

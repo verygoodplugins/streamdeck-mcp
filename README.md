@@ -1,5 +1,7 @@
 # 🎛️ Stream Deck MCP · v0.1.0
 
+<!-- mcp-name: io.github.verygoodplugins/streamdeck-mcp -->
+
 > **Let AI design your Stream Deck setup** — Describe what you want in plain English. Your AI builds it.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
