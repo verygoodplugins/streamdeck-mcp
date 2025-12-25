@@ -29,6 +29,9 @@ build-backend = "hatchling.build"
 packages = ["."]
 only-include = ["server.py"]
 
+[tool.mcp]
+name = "io.github.verygoodplugins/streamdeck-mcp"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

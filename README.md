@@ -232,6 +232,6 @@ MIT — Because hardware control should be free.
 
 ---
 
-*Built by [Jack Arturo](https://verygoodplugins.com) at Very Good Plugins* 🧡
+*Built by [Jack Arturo](https://verygoodplugins.com/?utm_source=github) at Very Good Plugins* 🧡
 
 [![X (Twitter)](https://img.shields.io/badge/follow-@jjack__arturo-black?logo=x)](https://x.com/jjack_arturo)
