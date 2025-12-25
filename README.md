@@ -28,6 +28,19 @@ Your AI designs the strategy, creates the pages, and configures every button. Do
 
 Works with: Stream Deck, Stream Deck Mini, Stream Deck XL, Stream Deck MK.2, Stream Deck +
 
+## ⚠️ Important: Quit Elgato Software First
+
+**This MCP server requires exclusive USB access.** You must quit the Elgato Stream Deck software before using it:
+
+```bash
+# macOS — quit Elgato software
+killall "Stream Deck" 2>/dev/null || true
+```
+
+The Stream Deck can only be controlled by one application at a time. While using this MCP server, the Elgato software cannot run (and vice versa).
+
+---
+
 ## 🏃 Quick Start — 2 Minutes to Buttons
 
 ### 1️⃣ Prerequisites
