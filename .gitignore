@@ -25,36 +25,25 @@ wheels/
 venv/
 ENV/
 
-# UV
-uv.lock
-
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
-.cursor/
-
-# OS
-.DS_Store
-Thumbs.db
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
-.tox/
-.nox/
 
-# Local config
+# Environment
 .env
 .env.local
-*.local.json
-claude_desktop_config.json
 
-# Logs
-*.log
+# macOS
+.DS_Store
 
-# Project specific
-.claude/
+# Local config (user state is stored here, don't track)
+# ~/.streamdeck-mcp/
+/.claude

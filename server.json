@@ -1,0 +1,36 @@
+{
+  "$schema": "https://registry.modelcontextprotocol.io/schemas/server.json",
+  "name": "streamdeck",
+  "version": "0.1.0",
+  "description": "MCP server for Elgato Stream Deck control — set buttons, manage pages, wire actions",
+  "license": "MIT",
+  "author": {
+    "name": "Jack Arturo",
+    "url": "https://verygoodplugins.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/verygoodplugins/streamdeck-mcp"
+  },
+  "homepage": "https://github.com/verygoodplugins/streamdeck-mcp",
+  "bugs": "https://github.com/verygoodplugins/streamdeck-mcp/issues",
+  "keywords": [
+    "mcp",
+    "streamdeck",
+    "elgato",
+    "home-automation",
+    "hardware"
+  ],
+  "packages": {
+    "python": {
+      "runtime": "python",
+      "version": ">=3.11",
+      "entrypoint": "server.py",
+      "dependencies": [
+        "mcp[cli]>=1.6.0",
+        "streamdeck>=0.9.0",
+        "pillow>=10.0.0"
+      ]
+    }
+  }
+}

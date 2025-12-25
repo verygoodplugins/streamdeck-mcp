@@ -1,19 +1,36 @@
 # 🎛️ Stream Deck MCP · v0.1.0
 
-> **Control your Elgato Stream Deck via MCP** — Set buttons, manage pages, wire actions. No YAML hell, no GUI clicking.
+> **Let AI design your Stream Deck setup** — Describe what you want in plain English. Your AI builds it.
 
-## ✨ What This Does
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-🎯 **Direct hardware control** — Bypasses Elgato software entirely via USB  
-🔥 **Multi-page support** — Create profiles like "Office", "Gaming", "Streaming"  
-🧠 **Persistent state** — Button configs survive restarts  
-⚡ **Action hooks** — Wire buttons to shell commands or page switches  
+## The Problem
 
-Works with: Stream Deck (all sizes), Stream Deck Mini, Stream Deck XL, Stream Deck MK.2
+Stream Deck is powerful, but configuring it is tedious. Clicking through the GUI, finding icons, setting up multi-page workflows — it takes forever.
 
-## 🏃 Quick Start — 5 Minutes to Buttons
+## The Solution
 
-### Prerequisites
+Tell your AI what you want:
+
+```
+"Design a podcast studio layout with pages for recording, editing, and publishing.
+Include buttons for mic mute, recording start/stop, sound effects, and scene switching."
+```
+
+Your AI designs the strategy, creates the pages, and configures every button. Done.
+
+## ✨ What You Can Do
+
+🎙️ **"Set up my Stream Deck for podcasting"** — AI designs a multi-page system
+🏠 **"Create a home automation page"** — Buttons for lights, scenes, climate
+🎮 **"Build a gaming profile with Discord, OBS, and Spotify"** — One prompt, full setup
+🔄 **"Redesign my layout to be more intuitive"** — AI understands workflow, suggests improvements
+
+Works with: Stream Deck, Stream Deck Mini, Stream Deck XL, Stream Deck MK.2, Stream Deck +
+
+## 🏃 Quick Start — 2 Minutes to Buttons
+
+### 1️⃣ Prerequisites
 
 ```bash
 # macOS
@@ -29,17 +46,17 @@ EOF
 sudo udevadm control --reload-rules
 ```
 
-### 1️⃣ Install
+### 2️⃣ Install
 
 ```bash
-cd ~/Projects/OpenAI/mcp-servers/streamdeck-mcp
-uv venv
-uv pip install -e .
+git clone https://github.com/verygoodplugins/streamdeck-mcp.git
+cd streamdeck-mcp
+uv venv && uv pip install -e .
 ```
 
-### 2️⃣ Add to Claude Desktop
+### 3️⃣ Add to Claude Desktop
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -48,7 +65,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "uv",
       "args": [
         "--directory",
-        "/Users/jgarturo/Projects/OpenAI/mcp-servers/streamdeck-mcp",
+        "/path/to/streamdeck-mcp",
         "run",
         "server.py"
       ]
@@ -57,7 +74,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-### 3️⃣ Connect and Configure
+### 4️⃣ Use It
 
 In Claude:
 ```
@@ -88,18 +105,35 @@ That's it! 🎉
 | `streamdeck_delete_page` | Delete a page (except "main") |
 | `streamdeck_disconnect` | Clean disconnect |
 
+### Natural Language Examples
+
+Just tell Claude what you want:
+
+- "Connect to my Stream Deck and show me the layout"
+- "Set button 0 to say 'Lights' with a blue background"
+- "Make button 4 open Spotify when I press it"
+- "Create a 'gaming' page with Discord, Steam, and OBS buttons"
+- "Switch to the gaming page"
+- "Set brightness to 50%"
+
 ## 📐 Button Layout
 
 Buttons are numbered left-to-right, top-to-bottom:
 
-**Stream Deck (15 keys, 5x3):**
+**Stream Deck (15 keys, 5×3):**
 ```
 [0]  [1]  [2]  [3]  [4]
 [5]  [6]  [7]  [8]  [9]
 [10] [11] [12] [13] [14]
 ```
 
-**Stream Deck XL (32 keys, 8x4):**
+**Stream Deck Mini (6 keys, 3×2):**
+```
+[0]  [1]  [2]
+[3]  [4]  [5]
+```
+
+**Stream Deck XL (32 keys, 8×4):**
 ```
 [0]  [1]  [2]  [3]  [4]  [5]  [6]  [7]
 [8]  [9]  [10] [11] [12] [13] [14] [15]
@@ -118,7 +152,7 @@ Set up my Stream Deck for home control:
 - Button 4: Page switch to "media" page
 ```
 
-The action field accepts any shell command, so you can use `curl` to hit HA webhooks or the HA CLI.
+The action field accepts any shell command — use `curl` to hit HA webhooks or the HA CLI.
 
 ## 🎨 Custom Icons
 
@@ -128,7 +162,7 @@ Drop PNG/JPG files anywhere and reference them:
 Set button 5 with image ~/icons/spotify.png
 ```
 
-Images auto-scale to button size (72x72 or 96x96 depending on deck model).
+Images auto-scale to button size (72×72 or 96×96 depending on deck model).
 
 ## 📁 State Storage
 
@@ -141,24 +175,50 @@ Configs persist at `~/.streamdeck-mcp/`:
 **"No Stream Deck found"**
 - Check USB connection
 - On Linux: Did you add the udev rule and reload?
-- On macOS: Grant terminal USB access in System Preferences > Security
+- On macOS: Grant terminal USB access in System Preferences → Security & Privacy
 
 **"streamdeck library not installed"**
 ```bash
-uv pip install streamdeck
+uv pip install streamdeck pillow
 ```
 
 **Buttons don't respond to presses**
-- Physical button callbacks require the server to stay running
-- For persistent actions, use the Elgato software + this MCP for configuration
+- Physical button callbacks require the MCP server to stay running
+- The server runs while Claude Desktop is open
 
-## 🔮 Coming Soon
+**"Deck disconnected" errors**
+- The server handles USB disconnections gracefully
+- Just say "Connect to my Stream Deck" again to reconnect
+
+## 🧪 Development
+
+```bash
+# Setup
+uv venv && uv pip install -e ".[dev]"
+
+# Run server
+uv run server.py
+
+# Run tests (no hardware required)
+uv run pytest tests/ -v
+
+# Lint
+uv run ruff check .
+```
+
+## 🔮 Roadmap
 
 - [ ] Home Assistant entity browser integration
 - [ ] Icon generation from emoji
 - [ ] Button press webhooks
 - [ ] Multi-deck support
 
+## License
+
+MIT — Because hardware control should be free.
+
 ---
 
-MIT License
+*Built by [Jack Arturo](https://verygoodplugins.com) at Very Good Plugins* 🧡
+
+[![X (Twitter)](https://img.shields.io/badge/follow-@jjack__arturo-black?logo=x)](https://x.com/jjack_arturo)

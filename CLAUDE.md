@@ -1,56 +1,80 @@
-# Stream Deck MCP — Agent Instructions
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
-This MCP server provides direct USB control of Elgato Stream Deck devices. It bypasses the official Elgato software entirely using the `python-elgato-streamdeck` library.
 
-## Architecture
+MCP server providing direct USB control of Elgato Stream Deck devices. Bypasses Elgato software entirely using `python-elgato-streamdeck`.
 
-```
-server.py          # Main MCP server (FastMCP pattern)
-├── StreamDeckState    # State manager (connection, pages, buttons)
-├── list_tools()       # Tool definitions
-└── call_tool()        # Tool handlers
-```
-
-## Key Concepts
-
-**Button indexing**: 0-based, left-to-right, top-to-bottom. A 5x3 deck has keys 0-14.
-
-**Pages**: Named button profiles. "main" is default and cannot be deleted. Users can create arbitrary pages ("gaming", "streaming", "office") and switch between them.
-
-**State persistence**: All button configs and actions saved to `~/.streamdeck-mcp/` as JSON. Survives restarts.
-
-**Actions**: Currently supports:
-- `page:name` — Switch to another page
-- Shell commands (executed on button press, requires server running)
-
-## Development
+## Development Commands
 
 ```bash
 # Setup
-uv venv && uv pip install -e .
+uv venv && uv pip install -e ".[dev]"
 
-# Run standalone
+# Run server (for Claude Desktop)
 uv run server.py
 
-# Test without deck (will fail gracefully)
+# Lint
+uv run ruff check .
+uv run ruff check --fix .
+
+# Format
+uv run ruff format .
+
+# Run tests (no hardware required)
+uv run pytest tests/ -v
+
+# Test without deck (fails gracefully if no hardware)
 python -c "from server import state; print(state.get_deck_info())"
 ```
 
-## Dependencies
+## Claude Desktop Config
 
-- `mcp[cli]` — MCP server framework
-- `streamdeck` — USB hardware control
-- `pillow` — Image generation for button faces
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "streamdeck": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/streamdeck-mcp", "run", "server.py"]
+    }
+  }
+}
+```
+
+## Architecture
+
+Single-file server (`server.py`) using MCP's `Server` class with stdio transport.
+
+```
+server.py
+├── StreamDeckState      # Connection, pages, buttons, callbacks
+│   ├── connect()        # Find and open first USB deck
+│   ├── set_button_*()   # Image/action configuration
+│   ├── *_page()         # Page CRUD and switching
+│   └── _key_callback()  # Physical button press handler
+├── @server.list_tools() # Tool definitions
+└── @server.call_tool()  # Tool handlers
+```
+
+**State persistence**: `~/.streamdeck-mcp/pages.json` (appearance) and `buttons.json` (actions).
+
+## Key Concepts
+
+- **Button indexing**: 0-based, left-to-right, top-to-bottom. 5x3 deck = keys 0-14.
+- **Pages**: Named profiles. "main" is default and undeletable.
+- **Actions**: `page:name` for page switching, or shell commands (requires running server).
+- **Image generation**: Pillow creates button images from text/colors. Falls back gracefully if fonts unavailable.
 
 ## USB Permissions
 
-macOS: Usually works out of the box
-Linux: Requires udev rule (see README)
-Windows: May need Zadig driver
+- **macOS**: `brew install hidapi` (usually works)
+- **Linux**: Needs udev rule — see README
+- **Windows**: May need Zadig driver
 
-## Common Issues
+## Troubleshooting
 
-1. **"No Stream Deck found"** — Check USB, permissions
-2. **Button images don't show** — Pillow not installed or font not found
-3. **State not persisting** — Check write permissions on ~/.streamdeck-mcp/
+1. **"No Stream Deck found"** — Check USB, permissions, hidapi installed
+2. **Button images blank** — Pillow not installed or font not found
+3. **State not persisting** — Check write permissions on `~/.streamdeck-mcp/`
