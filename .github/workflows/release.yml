@@ -1,101 +1,112 @@
-# Release workflow for streamdeck-mcp
-#
-# How it works:
-# 1. Create a git tag (e.g., v1.0.0)
-# 2. Push the tag to trigger this workflow
-# 3. Workflow builds and publishes to PyPI using Trusted Publishing
-#
-# PyPI Trusted Publishing:
-#   No API tokens needed! Configure at:
-#   https://pypi.org/manage/project/streamdeck-mcp/settings/publishing/
-#   Add this repository as a trusted publisher.
-
-name: Release
+name: Release Please
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
-  id-token: write
+  issues: write
+  pull-requests: write
 
 jobs:
-  test:
+  release-please:
+    name: Release Please
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
-      - uses: actions/setup-python@v5
+  build-release:
+    name: Build Release
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
 
       - name: Install dependencies
         run: |
           uv venv
           uv pip install -e ".[dev]"
 
+      - name: Run linter
+        run: uv run ruff check .
+
       - name: Run tests
         run: uv run pytest tests/ -v
 
-  build:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
-
       - name: Build package
-        run: python -m build
+        run: uv build --out-dir dist
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist
           path: dist/
 
   publish-pypi:
-    needs: build
+    name: Publish to PyPI
+    needs: build-release
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: dist
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
+        with:
+          skip-existing: true
 
-  create-release:
-    needs: publish-pypi
+  upload-release-artifacts:
+    name: Upload Release Artifacts
+    needs:
+      - release-please
+      - build-release
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          generate_release_notes: true
+          name: dist
+          path: dist/
+
+      - name: Upload release artifacts
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+        with:
+          tag_name: ${{ needs.release-please.outputs.tag_name }}
           files: |
-            profile_manager.py
-            profile_server.py
-            server.py
-            server.json
+            dist/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
