@@ -1,13 +1,21 @@
 [project]
 name = "streamdeck-mcp"
-version = "0.1.2"
-description = "MCP server for Elgato Stream Deck control — set buttons, manage pages, wire actions"
+version = "0.2.0"
+description = "MCP server for Stream Deck profile writing with legacy USB control"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Jack Arturo"}
 ]
 requires-python = ">=3.11"
+keywords = ["mcp", "streamdeck", "elgato", "profiles", "automation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "mcp[cli]>=1.6.0",
     "streamdeck>=0.9.0",
@@ -16,22 +24,38 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21.0",
-    "ruff",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["."]
-only-include = ["server.py"]
+[project.scripts]
+streamdeck-mcp = "profile_server:run"
+streamdeck-mcp-usb = "server:run"
+
+[project.urls]
+Homepage = "https://github.com/verygoodplugins/streamdeck-mcp"
+Repository = "https://github.com/verygoodplugins/streamdeck-mcp"
+Issues = "https://github.com/verygoodplugins/streamdeck-mcp/issues"
 
 [tool.mcp]
 name = "io.github.verygoodplugins/streamdeck-mcp"
 
+[tool.setuptools]
+py-modules = ["profile_manager", "profile_server", "server"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]

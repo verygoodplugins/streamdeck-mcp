@@ -1,17 +1,19 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.verygoodplugins/streamdeck-mcp",
-  "description": "MCP server for Elgato Stream Deck control — set buttons, manage pages, wire actions",
+  "title": "Stream Deck MCP",
+  "description": "Write Stream Deck desktop profiles with a legacy USB fallback.",
+  "version": "0.2.0",
+  "websiteUrl": "https://verygoodplugins.com/?utm_source=mcp-registry",
   "repository": {
     "url": "https://github.com/verygoodplugins/streamdeck-mcp",
     "source": "github"
   },
-  "version": "0.1.2",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "streamdeck-mcp",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "transport": {
         "type": "stdio"
       },
@@ -19,10 +21,32 @@
       "runtimeVersion": ">=3.11"
     }
   ],
-  "author": {
-    "name": "Jack Arturo",
-    "url": "https://verygoodplugins.com/?utm_source=mcp-registry"
-  },
+  "tools": [
+    {
+      "name": "streamdeck_read_profiles",
+      "description": "List desktop profiles from ProfilesV3 or ProfilesV2."
+    },
+    {
+      "name": "streamdeck_read_page",
+      "description": "Read a profile page by index or directory ID."
+    },
+    {
+      "name": "streamdeck_write_page",
+      "description": "Create or rewrite a Stream Deck desktop page manifest."
+    },
+    {
+      "name": "streamdeck_create_icon",
+      "description": "Generate a 72x72 PNG icon for a profile button."
+    },
+    {
+      "name": "streamdeck_create_action",
+      "description": "Create a script-backed Open action block."
+    },
+    {
+      "name": "streamdeck_restart_app",
+      "description": "Restart the Stream Deck desktop app on macOS."
+    }
+  ],
   "license": "MIT",
-  "keywords": ["streamdeck", "elgato", "hardware", "home-automation", "mcp"]
+  "keywords": ["streamdeck", "elgato", "profiles", "automation", "mcp"]
 }

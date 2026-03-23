@@ -1,82 +1,45 @@
-# 🎛️ Stream Deck MCP · v0.1.0
+# Stream Deck MCP
 
 <!-- mcp-name: io.github.verygoodplugins/streamdeck-mcp -->
 
-> **Let AI design your Stream Deck setup** — Describe what you want in plain English. Your AI builds it.
+AI-first MCP server for Elgato Stream Deck profile management. The default server writes directly to the Stream Deck desktop app's native profile files, and the original USB-direct server is still available as a legacy fallback.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+## Installation
 
-## The Problem
+### Default: Desktop Profile Writer
 
-Stream Deck is powerful, but configuring it is tedious. Clicking through the GUI, finding icons, setting up multi-page workflows — it takes forever.
-
-## The Solution
-
-Tell your AI what you want:
-
-```
-"Design a podcast studio layout with pages for recording, editing, and publishing.
-Include buttons for mic mute, recording start/stop, sound effects, and scene switching."
-```
-
-Your AI designs the strategy, creates the pages, and configures every button. Done.
-
-## ✨ What You Can Do
-
-🎙️ **"Set up my Stream Deck for podcasting"** — AI designs a multi-page system
-🏠 **"Create a home automation page"** — Buttons for lights, scenes, climate
-🎮 **"Build a gaming profile with Discord, OBS, and Spotify"** — One prompt, full setup
-🔄 **"Redesign my layout to be more intuitive"** — AI understands workflow, suggests improvements
-
-Works with: Stream Deck, Stream Deck Mini, Stream Deck XL, Stream Deck MK.2, Stream Deck +
-
-## ⚠️ Important: Quit Elgato Software First
-
-**This MCP server requires exclusive USB access.** You must quit the Elgato Stream Deck software before using it:
+The default packaged entrypoint is the profile writer. It edits `ProfilesV3` when present, then falls back to `ProfilesV2`.
 
 ```bash
-# macOS — quit Elgato software
-killall "Stream Deck" 2>/dev/null || true
+uvx streamdeck-mcp
 ```
 
-The Stream Deck can only be controlled by one application at a time. While using this MCP server, the Elgato software cannot run (and vice versa).
-
----
-
-## 🏃 Quick Start — 2 Minutes to Buttons
-
-### 1️⃣ Prerequisites
-
-```bash
-# macOS
-brew install hidapi
-
-# Linux (Debian/Ubuntu)
-sudo apt install libhidapi-libusb0
-
-# Linux udev rule (required for non-root access)
-sudo tee /etc/udev/rules.d/10-streamdeck.rules << EOF
-SUBSYSTEMS=="usb", ATTRS{idVendor}=="0fd9", GROUP="users", MODE="0666"
-EOF
-sudo udevadm control --reload-rules
-```
-
-### 2️⃣ Install
-
-```bash
-git clone https://github.com/verygoodplugins/streamdeck-mcp.git
-cd streamdeck-mcp
-uv venv && uv pip install -e .
-```
-
-### 3️⃣ Add to Claude Desktop
-
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+### Local Repo Configuration
 
 ```json
 {
   "mcpServers": {
     "streamdeck": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/streamdeck-mcp",
+        "run",
+        "profile_server.py"
+      ]
+    }
+  }
+}
+```
+
+### Legacy USB Server
+
+If you still want direct hardware control that bypasses the Elgato app entirely, keep using the legacy server:
+
+```json
+{
+  "mcpServers": {
+    "streamdeck-usb": {
       "command": "uv",
       "args": [
         "--directory",
@@ -89,151 +52,79 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 }
 ```
 
-### 4️⃣ Use It
+Or use the packaged legacy entrypoint:
 
-In Claude:
-```
-Connect to my Stream Deck
-```
-
-Then:
-```
-Set button 0 to "Lights" with a blue background
-Set button 1 to "Music" with action "open -a Spotify"
-Create a page called "gaming" and switch to it
+```bash
+uvx --from streamdeck-mcp streamdeck-mcp-usb
 ```
 
-That's it! 🎉
-
-## 🛠️ Available Tools
+## Default Tools
 
 | Tool | What it does |
-|------|-------------|
-| `streamdeck_connect` | Connect to first available deck |
-| `streamdeck_info` | Get deck model, key count, current page |
-| `streamdeck_set_button` | Set text, image, colors, and action |
-| `streamdeck_clear_button` | Clear a single button |
-| `streamdeck_set_brightness` | 0-100% brightness |
-| `streamdeck_create_page` | Create a new button profile |
-| `streamdeck_switch_page` | Switch active page |
-| `streamdeck_list_pages` | List all pages |
-| `streamdeck_delete_page` | Delete a page (except "main") |
-| `streamdeck_disconnect` | Clean disconnect |
+|------|---------------|
+| `streamdeck_read_profiles` | Lists desktop profiles and page directories from the active ProfilesV3 or ProfilesV2 store |
+| `streamdeck_read_page` | Reads a page manifest and returns simplified button details plus the raw manifest |
+| `streamdeck_write_page` | Creates a new page or rewrites an existing page manifest |
+| `streamdeck_create_icon` | Generates a 72x72 PNG icon with text and colors |
+| `streamdeck_create_action` | Creates an executable shell script in `~/StreamDeckScripts/` and returns an Open action block |
+| `streamdeck_restart_app` | Restarts the macOS Stream Deck desktop app after profile changes |
 
-### Natural Language Examples
+## How the Profile Writer Works
 
-Just tell Claude what you want:
+- `ProfilesV3` is preferred when it exists because page UUIDs map cleanly to directories.
+- `ProfilesV2` is still supported, but existing pages should be targeted by `directory_id` or `page_index` because Elgato stores opaque page directory names there.
+- `streamdeck_write_page` can accept raw native action objects, or use convenience fields like `path`, `action_type`, `plugin_uuid`, and `action_uuid`.
+- Generated icons are stored in `~/.streamdeck-mcp/generated-icons/`.
+- Generated shell scripts are stored in `~/StreamDeckScripts/`.
 
-- "Connect to my Stream Deck and show me the layout"
-- "Set button 0 to say 'Lights' with a blue background"
-- "Make button 4 open Spotify when I press it"
-- "Create a 'gaming' page with Discord, Steam, and OBS buttons"
-- "Switch to the gaming page"
-- "Set brightness to 50%"
+## Usage Notes
 
-## 📐 Button Layout
+- After writing profiles, the Elgato desktop app may need a restart to pick up the new manifests.
+- `streamdeck_create_action` is the safest way to build shell-command buttons because it writes a standalone script and returns the native Open action block for it.
+- The profile writer does not require exclusive USB access.
 
-Buttons are numbered left-to-right, top-to-bottom:
+## Legacy USB Tools
 
-**Stream Deck (15 keys, 5×3):**
-```
-[0]  [1]  [2]  [3]  [4]
-[5]  [6]  [7]  [8]  [9]
-[10] [11] [12] [13] [14]
-```
+The original USB-direct server is preserved for backwards compatibility. It still provides:
 
-**Stream Deck Mini (6 keys, 3×2):**
-```
-[0]  [1]  [2]
-[3]  [4]  [5]
-```
+- `streamdeck_connect`
+- `streamdeck_info`
+- `streamdeck_set_button`
+- `streamdeck_set_buttons`
+- `streamdeck_clear_button`
+- `streamdeck_get_button`
+- `streamdeck_clear_all`
+- `streamdeck_set_brightness`
+- `streamdeck_create_page`
+- `streamdeck_switch_page`
+- `streamdeck_list_pages`
+- `streamdeck_delete_page`
+- `streamdeck_disconnect`
 
-**Stream Deck XL (32 keys, 8×4):**
-```
-[0]  [1]  [2]  [3]  [4]  [5]  [6]  [7]
-[8]  [9]  [10] [11] [12] [13] [14] [15]
-[16] [17] [18] [19] [20] [21] [22] [23]
-[24] [25] [26] [27] [28] [29] [30] [31]
-```
+Use that mode only when you want the MCP server to own the hardware directly and the Elgato desktop app is not running.
 
-## 🏠 Home Assistant Integration
-
-Wire buttons to your HA entities. Example prompt:
-
-```
-Set up my Stream Deck for home control:
-- Button 0: "Office Lights" that toggles light.office_ceiling
-- Button 1: "All Off" that runs a scene
-- Button 4: Page switch to "media" page
-```
-
-The action field accepts any shell command — use `curl` to hit HA webhooks or the HA CLI.
-
-## 🎨 Custom Icons
-
-Drop PNG/JPG files anywhere and reference them:
-
-```
-Set button 5 with image ~/icons/spotify.png
-```
-
-Images auto-scale to button size (72×72 or 96×96 depending on deck model).
-
-## 📁 State Storage
-
-Configs persist at `~/.streamdeck-mcp/`:
-- `pages.json` — Button appearances per page
-- `buttons.json` — Button actions per page
-
-## ⚠️ Troubleshooting
-
-**"No Stream Deck found"**
-- Check USB connection
-- On Linux: Did you add the udev rule and reload?
-- On macOS: Grant terminal USB access in System Preferences → Security & Privacy
-
-**"streamdeck library not installed"**
-```bash
-uv pip install streamdeck pillow
-```
-
-**Buttons don't respond to presses**
-- Physical button callbacks require the MCP server to stay running
-- The server runs while Claude Desktop is open
-
-**"Deck disconnected" errors**
-- The server handles USB disconnections gracefully
-- Just say "Connect to my Stream Deck" again to reconnect
-
-## 🧪 Development
+## Development
 
 ```bash
-# Setup
-uv venv && uv pip install -e ".[dev]"
-
-# Run server
-uv run server.py
-
-# Run tests (no hardware required)
+uv venv
+uv pip install -e ".[dev]"
 uv run pytest tests/ -v
-
-# Lint
 uv run ruff check .
 ```
 
-## 🔮 Roadmap
+To audit this repo against the shared Very Good Plugins MCP standards:
 
-- [ ] Home Assistant entity browser integration
-- [ ] Icon generation from emoji
-- [ ] Button press webhooks
-- [ ] Multi-deck support
+```bash
+../mcp-ecosystem/scripts/audit-server.sh .
+```
 
-## License
+## Support
 
-MIT — Because hardware control should be free.
+For issues, questions, or suggestions:
+
+- [Open an issue on GitHub](https://github.com/verygoodplugins/streamdeck-mcp/issues)
+- [Contact Very Good Plugins](https://verygoodplugins.com/contact/?utm_source=github)
 
 ---
 
-*Built by [Jack Arturo](https://verygoodplugins.com/?utm_source=github) at Very Good Plugins* 🧡
-
-[![X (Twitter)](https://img.shields.io/badge/follow-@jjack__arturo-black?logo=x)](https://x.com/jjack_arturo)
+Built with 🧡 by [Very Good Plugins](https://verygoodplugins.com/?utm_source=github)

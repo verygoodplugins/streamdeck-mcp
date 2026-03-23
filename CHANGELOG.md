@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - Unreleased
+
+### Added
+
+- New `profile_server.py` MCP server that writes directly to Stream Deck desktop profiles
+- `profile_manager.py` with ProfilesV3-first support and ProfilesV2 fallback
+- New tools: `streamdeck_read_profiles`, `streamdeck_read_page`, `streamdeck_write_page`
+- `streamdeck_create_icon` for generating 72x72 PNG icons
+- `streamdeck_create_action` for generating script-backed Open action blocks
+- `streamdeck_restart_app` for macOS desktop app reloads after profile writes
+- New package entrypoints: `streamdeck-mcp` for profile writing and `streamdeck-mcp-usb` for legacy USB control
+- Profile writer skill documentation for agents without MCP access
+- PR title and Dependabot workflows for alignment with the shared MCP ecosystem standards
+
+### Changed
+
+- The default packaged server direction now targets desktop profile writing instead of exclusive USB control
+- Registry metadata and package configuration now describe the profile writer as the default experience
+- Security workflow now scans this repo structure instead of a non-existent `src/` directory
+
 ## [0.1.0] - 2025-12-25
 
 ### Added

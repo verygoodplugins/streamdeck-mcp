@@ -95,5 +95,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
+            profile_manager.py
+            profile_server.py
             server.py
             server.json
