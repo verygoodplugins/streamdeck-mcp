@@ -3,6 +3,7 @@ Tests for the Stream Deck desktop profile manager.
 """
 
 import json
+import shlex
 from pathlib import Path
 from unittest.mock import patch
 
@@ -259,7 +260,7 @@ def test_create_action_writes_script_and_returns_open_action(
 
     script_path = Path(result["script_path"])
     assert script_path.exists()
-    assert f'cd "{project_dir}"' in script_path.read_text()
+    assert f"cd {shlex.quote(str(project_dir))}" in script_path.read_text()
     assert result["action"]["Settings"]["path"] == f'"{script_path}"'
     assert result["action"]["UUID"] == "com.elgato.streamdeck.system.open"
 

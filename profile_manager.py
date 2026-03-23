@@ -15,6 +15,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import string
 import subprocess
@@ -196,7 +197,8 @@ def _slugify(value: str) -> str:
 
 
 def _quote_open_path(path: Path) -> str:
-    return f'"{path}"'
+    escaped = str(path).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def _ensure_hex_color(value: str, *, field_name: str) -> str:
@@ -494,7 +496,7 @@ class ProfileManager:
 
         lines = ["#!/bin/bash", "set -e"]
         if working_directory:
-            lines.append(f"cd {json.dumps(working_directory)}")
+            lines.append(f"cd {shlex.quote(working_directory)}")
         lines.append(command)
         script_path.write_text("\n".join(lines) + "\n")
         script_path.chmod(0o755)
