@@ -48,5 +48,11 @@
     }
   ],
   "license": "MIT",
-  "keywords": ["streamdeck", "elgato", "profiles", "automation", "mcp"]
+  "keywords": [
+    "streamdeck",
+    "elgato",
+    "profiles",
+    "automation",
+    "mcp"
+  ]
 }
