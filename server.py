@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import re
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -347,11 +348,14 @@ class StreamDeckState:
                 self.switch_page(new_page)
                 logger.info(f"Switched to page '{new_page}'")
             elif action_type == "command":
-                # Shell command execution
+                # Execute argv-style commands to avoid shell injection.
                 logger.info(f"Executing command: {action}")
+                parsed_action = shlex.split(action)
+                if not parsed_action:
+                    raise ValidationError("Button action command cannot be empty.")
                 subprocess.Popen(
-                    action,
-                    shell=True,
+                    parsed_action,
+                    shell=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )

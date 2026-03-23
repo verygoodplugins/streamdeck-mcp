@@ -4,6 +4,7 @@ Tests for the Stream Deck desktop profile manager.
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -191,7 +192,7 @@ def test_write_page_updates_existing_v3_page(sample_profiles_v3: Path, tmp_path:
                 "key": 1,
                 "title": "Ship",
                 "icon_path": icon["path"],
-                "path": "/tmp/ship.sh",
+                "path": str(tmp_path / "ship.sh"),
             }
         ],
     )
@@ -248,18 +249,31 @@ def test_create_action_writes_script_and_returns_open_action(
         scripts_dir=tmp_path / "scripts",
         generated_icons_dir=tmp_path / "icons",
     )
+    project_dir = tmp_path / "project"
 
     result = manager.create_action(
         name="Git Pull",
         command="git pull",
-        working_directory="/tmp/project",
+        working_directory=str(project_dir),
     )
 
     script_path = Path(result["script_path"])
     assert script_path.exists()
-    assert 'cd "/tmp/project"' in script_path.read_text()
+    assert f'cd "{project_dir}"' in script_path.read_text()
     assert result["action"]["Settings"]["path"] == f'"{script_path}"'
     assert result["action"]["UUID"] == "com.elgato.streamdeck.system.open"
+
+
+def test_create_action_rejects_windows_runtime(sample_profiles_v3: Path, tmp_path: Path) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    with patch("profile_manager.sys.platform", "win32"):
+        with pytest.raises(ProfileValidationError, match="only supported on POSIX systems"):
+            manager.create_action(name="Git Pull", command="git pull")
 
 
 def test_v2_pages_can_be_targeted_by_directory_id(sample_profiles_v2: Path, tmp_path: Path) -> None:
@@ -277,6 +291,64 @@ def test_v2_pages_can_be_targeted_by_directory_id(sample_profiles_v2: Path, tmp_
     assert page["profile"]["version"] == "2.0"
     assert page["page"]["mapping"] == "directory-order"
     assert page["buttons"][0]["position"] == "4,2"
+
+
+def test_v2_page_indices_are_sorted_by_directory_id(tmp_path: Path) -> None:
+    profiles_dir = tmp_path / "ProfilesV2"
+    profile_dir = profiles_dir / "LEGACY.sdProfile"
+    profile_manifest = {
+        "Device": {"Model": "20GBA9901", "UUID": "@(1)[4057/128/DL17K1A70403]"},
+        "Name": "Legacy Profile",
+        "Pages": {
+            "Current": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "Default": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "Pages": ["bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"],
+        },
+        "Version": "2.0",
+    }
+    _write_json(profile_dir / "manifest.json", profile_manifest)
+    _write_json(
+        profile_dir / "Profiles" / "ZZZPAGE" / "manifest.json",
+        _make_page_manifest(name="Later"),
+    )
+    _write_json(
+        profile_dir / "Profiles" / "AAAPAGE" / "manifest.json",
+        _make_page_manifest(name="Earlier"),
+    )
+
+    manager = ProfileManager(
+        profiles_dir=profiles_dir,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    first_page = manager.read_page(profile_name="Legacy Profile", page_index=0)
+    second_page = manager.read_page(profile_name="Legacy Profile", page_index=1)
+
+    assert first_page["page"]["directory_id"] == "AAAPAGE"
+    assert second_page["page"]["directory_id"] == "ZZZPAGE"
+
+
+def test_write_page_rejects_positions_outside_columns(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    with pytest.raises(ProfileValidationError, match="exceeds the inferred deck layout 5x3"):
+        manager.write_page(
+            profile_name="Default Profile",
+            directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            buttons=[
+                {
+                    "position": "5,0",
+                    "path": str(tmp_path / "ship.sh"),
+                }
+            ],
+        )
 
 
 def test_read_page_requires_locator(sample_profiles_v3: Path, tmp_path: Path) -> None:

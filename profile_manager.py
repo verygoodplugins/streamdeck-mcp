@@ -483,6 +483,10 @@ class ProfileManager:
 
         if not command.strip():
             raise ProfileValidationError("command cannot be empty.")
+        if sys.platform == "win32":
+            raise ProfileValidationError(
+                "streamdeck_create_action is currently only supported on POSIX systems."
+            )
 
         self.scripts_dir.mkdir(parents=True, exist_ok=True)
         stem = _slugify(filename or name)
@@ -634,7 +638,10 @@ class ProfileManager:
 
     def _page_refs_v2(self, profiles_path: Path, profile_manifest: dict[str, Any]) -> list[PageRef]:
         page_refs: list[PageRef] = []
-        entries = [Path(entry.path) for entry in os.scandir(profiles_path) if entry.is_dir()]
+        entries = sorted(
+            (Path(entry.path) for entry in os.scandir(profiles_path) if entry.is_dir()),
+            key=lambda path: path.name.lower(),
+        )
         for page_index, page_dir in enumerate(entries):
             page_refs.append(
                 self._build_page_ref(
@@ -744,7 +751,7 @@ class ProfileManager:
         else:
             raise ProfileValidationError("Each button needs either 'key' or 'position'.")
 
-        if row >= rows:
+        if col >= columns or row >= rows:
             raise ProfileValidationError(
                 f"Button position {col},{row} exceeds the inferred deck layout {columns}x{rows}."
             )
