@@ -922,8 +922,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="streamdeck_set_buttons",
             description=(
-                "Set multiple buttons at once. "
-                "This is faster than individual button calls."
+                "Set multiple buttons at once. This is faster than individual button calls."
             ),
             inputSchema={
                 "type": "object",

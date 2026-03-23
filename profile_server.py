@@ -61,8 +61,7 @@ async def list_tools() -> list[Tool]:
             "icon_path": {
                 "type": "string",
                 "description": (
-                    "Path to a local icon file. "
-                    "PNG is preferred; other formats are converted."
+                    "Path to a local icon file. PNG is preferred; other formats are converted."
                 ),
             },
             "path": {
@@ -173,8 +172,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="streamdeck_write_page",
             description=(
-                "Create a new page or replace/update an existing "
-                "Stream Deck desktop page manifest."
+                "Create a new page or replace/update an existing Stream Deck desktop page manifest."
             ),
             inputSchema={
                 "type": "object",
@@ -209,8 +207,7 @@ async def list_tools() -> list[Tool]:
                     "make_current": {
                         "type": "boolean",
                         "description": (
-                            "When true, make the page the active "
-                            "current page after writing."
+                            "When true, make the page the active current page after writing."
                         ),
                     },
                 },
@@ -257,8 +254,7 @@ async def list_tools() -> list[Tool]:
                     "working_directory": {
                         "type": "string",
                         "description": (
-                            "Optional working directory to cd into "
-                            "before executing the command."
+                            "Optional working directory to cd into before executing the command."
                         ),
                     },
                     "filename": {
