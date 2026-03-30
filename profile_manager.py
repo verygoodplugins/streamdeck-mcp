@@ -51,8 +51,13 @@ DEFAULT_PAGE_MANIFEST = {
 }
 
 MODEL_LAYOUTS: dict[str, tuple[int, int]] = {
-    "20GBA9901": (5, 3),
-    "UI Stream Deck": (4, 2),
+    "20GBA9901": (5, 3),       # Stream Deck Original (15 keys)
+    "20GAA9901": (5, 3),       # Stream Deck MK.2 (15 keys)
+    "20GAT9902": (8, 4),       # Stream Deck XL (32 keys)
+    "20GBA9902": (8, 4),       # Stream Deck XL rev2 (32 keys)
+    "20GAI9501": (3, 2),       # Stream Deck Mini (6 keys)
+    "20GBD9901": (4, 2),       # Stream Deck Neo (8 keys + touchscreen)
+    "UI Stream Deck": (4, 2),  # Virtual Stream Deck
 }
 
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
