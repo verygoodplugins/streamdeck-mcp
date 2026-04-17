@@ -36,7 +36,7 @@
     },
     {
       "name": "streamdeck_create_icon",
-      "description": "Generate a 72x72 PNG icon for a profile button."
+      "description": "Generate a 72x72 PNG icon from a Material Design Icons name (e.g. 'mdi:cpu-64-bit') or text. ~7400 MDI glyphs are bundled for offline rendering."
     },
     {
       "name": "streamdeck_create_action",

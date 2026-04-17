@@ -77,7 +77,7 @@ Stream Deck Original (15 keys):
 
 - **Pages**: Named profiles. "main" is default and undeletable.
 - **Actions**: `page:name` for page switching, or shell commands (requires running server).
-- **Image generation**: Pillow creates button images from text/colors. Falls back gracefully if fonts unavailable.
+- **Image generation**: Pillow renders button images. Accepts an MDI icon name (e.g. `mdi:cpu-64-bit` — ~7400 glyphs bundled in `streamdeck_assets/`) or freeform text, plus `icon_color` / `bg_color`. `icon` and `text` are mutually exclusive; use the button's `title` field on `streamdeck_write_page` for labels so they don't collide with Elgato's title overlay.
 
 ## USB Permissions
 
