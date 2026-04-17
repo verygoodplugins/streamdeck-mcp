@@ -6,7 +6,7 @@ Use this skill when you need to configure Elgato Stream Deck desktop profiles wi
 
 1. Call `streamdeck_read_profiles` to discover the active profiles root and page `directory_id` values.
 2. Call `streamdeck_read_page` before editing an existing page so you can inspect the current native action objects.
-3. Use `streamdeck_create_icon` when you need a quick text icon.
+3. Use `streamdeck_create_icon` for button art. Pass `icon` with a Material Design Icons name like `mdi:cpu-64-bit`, `mdi:volume-high`, or `mdi:github` (~7400 glyphs bundled) plus `icon_color` and `bg_color` for a glyph; or pass `text` alone for a text-only icon. `icon` and `text` are mutually exclusive — set the button's `title` on `streamdeck_write_page` for labels, since Elgato overlays titles on images.
 4. Use `streamdeck_create_action` when you want a shell-command button. It creates an executable script in `~/StreamDeckScripts/` and returns a ready-to-insert Open action block.
 5. Call `streamdeck_write_page` with `directory_id` for the safest updates on existing pages.
 6. Call `streamdeck_restart_app` on macOS if the Stream Deck desktop app does not pick up changes immediately.
