@@ -829,3 +829,148 @@ def test_create_icon_rejects_out_of_range_scale(tmp_path: Path) -> None:
 
     with pytest.raises(ProfileValidationError, match="icon_scale"):
         manager.create_icon(icon="mdi:cpu", icon_scale=1.5)
+
+
+def test_create_icon_touchstrip_shape_emits_200x100(tmp_path: Path) -> None:
+    from PIL import Image
+
+    manager = _icon_manager(tmp_path)
+    result = manager.create_icon(
+        icon="mdi:volume-high", icon_color="#00ff88", bg_color="#1a1a1a", shape="touchstrip"
+    )
+
+    assert result["shape"] == "touchstrip"
+    assert result["size"] == {"width": 200, "height": 100}
+    png = Image.open(result["path"])
+    assert png.size == (200, 100)
+
+
+def test_create_icon_rejects_unknown_shape(tmp_path: Path) -> None:
+    manager = _icon_manager(tmp_path)
+
+    with pytest.raises(ProfileValidationError, match="shape"):
+        manager.create_icon(icon="mdi:cpu", shape="donut")
+
+
+def test_install_mcp_plugin_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from profile_manager import ensure_mcp_plugin_installed
+    from streamdeck_plugin import PLUGIN_DIR_NAME
+
+    plugins_dir = tmp_path / "plugins"
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: plugins_dir)
+
+    first = ensure_mcp_plugin_installed()
+    assert first["installed"] is True
+    assert (plugins_dir / PLUGIN_DIR_NAME / "manifest.json").exists()
+    assert (plugins_dir / PLUGIN_DIR_NAME / "plugin.js").exists()
+    assert (plugins_dir / PLUGIN_DIR_NAME / "Images" / "plugin.png").exists()
+
+    second = ensure_mcp_plugin_installed()
+    assert second["installed"] is False
+    assert second["reason"] == "already installed"
+
+    forced = ensure_mcp_plugin_installed(force=True)
+    assert forced["installed"] is True
+
+
+def test_write_page_encoder_writes_encoder_icon_and_background(
+    sample_profiles_plus_xl: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Encoder buttons route icon_path to Action.Encoder.Icon and strip_background_path
+    to Action.Encoder.background, rather than the keypad State[0].Image."""
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: tmp_path / "plugins")
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    icon = manager.create_icon(icon="mdi:volume-high", filename="vol")
+    strip = manager.create_icon(
+        icon="mdi:volume-high", shape="touchstrip", filename="vol-strip"
+    )
+
+    manager.write_page(
+        profile_name="Plus XL",
+        page_index=0,
+        buttons=[
+            {
+                "controller": "encoder",
+                "key": 0,
+                "icon_path": icon["path"],
+                "strip_background_path": strip["path"],
+                "title": "Volume",
+            }
+        ],
+        clear_existing=False,
+    )
+
+    raw = json.loads(
+        (
+            sample_profiles_plus_xl
+            / "PLUSXL.sdProfile"
+            / "Profiles"
+            / "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD"
+            / "manifest.json"
+        ).read_text()
+    )
+    encoder_actions = next(
+        c["Actions"] for c in raw["Controllers"] if c["Type"] == "Encoder"
+    )
+    action = encoder_actions["0,0"]
+    assert action["UUID"] == "io.github.verygoodplugins.streamdeck-mcp.dial"
+    assert action["Encoder"]["Icon"].startswith("Images/")
+    assert action["Encoder"]["background"].startswith("Images/")
+    assert "Image" not in action["States"][0]
+
+
+def test_write_page_rejects_strip_background_on_keypad(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    strip = manager.create_icon(icon="mdi:volume-high", shape="touchstrip", filename="bg")
+
+    with pytest.raises(ProfileValidationError, match="strip_background_path"):
+        manager.write_page(
+            profile_name="Default Profile",
+            directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            buttons=[
+                {
+                    "key": 0,
+                    "title": "Nope",
+                    "strip_background_path": strip["path"],
+                    "action_type": "next_page",
+                }
+            ],
+        )
+
+
+def test_write_page_auto_installs_mcp_plugin_for_encoder_default(
+    sample_profiles_plus_xl: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from streamdeck_plugin import PLUGIN_DIR_NAME
+
+    plugins_dir = tmp_path / "plugins"
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: plugins_dir)
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    icon = manager.create_icon(icon="mdi:volume-high", filename="vol")
+
+    result = manager.write_page(
+        profile_name="Plus XL",
+        page_index=0,
+        buttons=[
+            {"controller": "encoder", "key": 0, "icon_path": icon["path"], "title": "V"}
+        ],
+        clear_existing=False,
+    )
+    assert result["mcp_plugin_install"]["installed"] is True
+    assert (plugins_dir / PLUGIN_DIR_NAME / "manifest.json").exists()

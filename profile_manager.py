@@ -39,6 +39,8 @@ DEFAULT_TEXT_COLOR = "#FFFFFF"
 DEFAULT_FONT_SIZE = 12
 DEFAULT_TITLE_ALIGNMENT = "bottom"
 DEFAULT_ICON_SIZE = (72, 72)
+TOUCHSTRIP_ICON_SIZE = (200, 100)
+ICON_SHAPES = {"button": DEFAULT_ICON_SIZE, "touchstrip": TOUCHSTRIP_ICON_SIZE}
 
 KEYPAD = "Keypad"
 ENCODER = "Encoder"
@@ -300,6 +302,54 @@ def _resolve_app_path() -> Path:
     if override:
         return Path(override).expanduser()
     return DEFAULT_STREAM_DECK_APP_PATH
+
+
+def get_plugins_dir() -> Path:
+    """Return the Elgato Stream Deck plugins directory for the current OS."""
+    home = Path.home()
+    if sys.platform == "darwin":
+        return home / "Library/Application Support/com.elgato.StreamDeck/Plugins"
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            raise ProfileManagerError("APPDATA is not set; cannot locate Stream Deck plugins.")
+        return Path(appdata) / "Elgato/StreamDeck/Plugins"
+    return home / ".local/share/Elgato/StreamDeck/Plugins"
+
+
+def ensure_mcp_plugin_installed(*, force: bool = False) -> dict[str, Any]:
+    """Install the bundled streamdeck-mcp plugin into the Elgato Plugins directory.
+
+    The plugin declares an encoder-capable action so that the Stream Deck app
+    accepts per-instance ``Encoder.Icon`` and ``Encoder.background`` writes made
+    by the profile writer. Without it, those fields are stripped on quit for any
+    action whose plugin does not declare encoder support.
+
+    Idempotent: returns ``installed=False`` when the plugin directory already
+    exists, unless ``force=True`` is passed.
+    """
+    from importlib.resources import as_file, files
+
+    from streamdeck_plugin import PLUGIN_DIR_NAME
+
+    plugins_dir = get_plugins_dir()
+    dst = plugins_dir / PLUGIN_DIR_NAME
+
+    if dst.exists() and not force:
+        return {"installed": False, "reason": "already installed", "path": str(dst)}
+
+    plugins_dir.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        if dst.is_symlink() or dst.is_file():
+            dst.unlink()
+        else:
+            shutil.rmtree(dst)
+
+    src_resource = files("streamdeck_plugin").joinpath(PLUGIN_DIR_NAME)
+    with as_file(src_resource) as src_path:
+        shutil.copytree(src_path, dst)
+
+    return {"installed": True, "path": str(dst)}
 
 
 def is_stream_deck_app_running() -> bool:
@@ -575,6 +625,14 @@ class ProfileManager:
 
         layouts_out: dict[str, dict[str, int]] = {}
 
+        # If any encoder button will land on the bundled streamdeck-mcp dial plugin,
+        # make sure the plugin bundle is actually installed in the Elgato Plugins dir.
+        # The app just quit (or was already stopped) so now is the right window for
+        # a filesystem install that the app will pick up on relaunch.
+        plugin_install_report: dict[str, Any] | None = None
+        if self._any_button_needs_mcp_plugin(buttons_by_controller):
+            plugin_install_report = ensure_mcp_plugin_installed()
+
         for controller_type, ctl_buttons in buttons_by_controller.items():
             cols, rows = self._resolve_layout(profile_manifest, page_manifest, controller_type)
             if cols <= 0 or rows <= 0:
@@ -585,7 +643,9 @@ class ProfileManager:
             existing = {} if clear_existing else copy.deepcopy(controller.get("Actions") or {})
             for button in ctl_buttons:
                 position = self._resolve_button_position(button, columns=cols, rows=rows)
-                existing[position] = self._materialize_action(button, page_dir)
+                existing[position] = self._materialize_action(
+                    button, page_dir, controller_type=controller_type
+                )
             controller["Actions"] = existing or None
             layouts_out[controller_type.lower()] = {"columns": cols, "rows": rows}
 
@@ -631,6 +691,7 @@ class ProfileManager:
             "page_name": page_manifest.get("Name", ""),
             "manifest_path": str(page_dir / "manifest.json"),
             "app_quit": app_stop_report,
+            "mcp_plugin_install": plugin_install_report,
         }
 
     def create_icon(
@@ -639,13 +700,27 @@ class ProfileManager:
         text: str | None = None,
         icon: str | None = None,
         icon_color: str | None = None,
-        icon_scale: float = 0.7,
+        icon_scale: float = 1.0,
         bg_color: str = DEFAULT_BG_COLOR,
         text_color: str = DEFAULT_TEXT_COLOR,
         font_size: int = 18,
         filename: str | None = None,
+        shape: str = "button",
+        transparent_bg: bool = False,
     ) -> dict[str, Any]:
-        """Generate a 72x72 PNG icon.
+        """Generate a PNG icon.
+
+        ``shape`` controls the output canvas:
+        - ``"button"`` (default): 72x72 — keypad keys and encoder dial faces.
+        - ``"touchstrip"``: 200x100 — the per-segment strip background above a
+          Stream Deck + / + XL dial, set via ``strip_background_path`` on
+          ``streamdeck_write_page``.
+
+        ``transparent_bg=True`` produces an RGBA PNG with a transparent canvas
+        (``bg_color`` is ignored). Use this for dial Icons that overlay a
+        touchstrip background so the glyph composes cleanly like Elgato's own
+        transparent icons. Keypad faces and touchstrip backgrounds usually want
+        the solid-background default.
 
         Provide exactly one of:
         - ``icon``: a Material Design Icons name (e.g. ``mdi:cpu-64-bit``) rendered in
@@ -673,7 +748,14 @@ class ProfileManager:
         if not 0.1 <= icon_scale <= 1.0:
             raise ProfileValidationError("icon_scale must be between 0.1 and 1.0.")
 
-        bg_color = _ensure_hex_color(bg_color, field_name="bg_color")
+        if shape not in ICON_SHAPES:
+            raise ProfileValidationError(
+                f"shape must be one of {sorted(ICON_SHAPES)}, got '{shape}'."
+            )
+        canvas_size = ICON_SHAPES[shape]
+
+        if not transparent_bg:
+            bg_color = _ensure_hex_color(bg_color, field_name="bg_color")
         text_color = _ensure_hex_color(text_color, field_name="text_color")
         resolved_icon_color = _ensure_hex_color(
             icon_color or text_color, field_name="icon_color"
@@ -690,18 +772,35 @@ class ProfileManager:
 
         stem_source = filename or canonical_icon_name or text or "streamdeck-icon"
         stem = _slugify(stem_source)
+        if shape != "button" and filename is None:
+            stem = f"{stem}-{shape}"
         icon_path = self.generated_icons_dir / f"{stem}.png"
 
-        image = Image.new("RGB", DEFAULT_ICON_SIZE, bg_color)
+        if transparent_bg:
+            image = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+        else:
+            image = Image.new("RGB", canvas_size, bg_color)
         draw = ImageDraw.Draw(image)
 
         if glyph is not None:
-            glyph_size = max(8, int(DEFAULT_ICON_SIZE[1] * icon_scale))
+            short_side = min(canvas_size)
+            target_glyph_px = max(8, int(short_side * icon_scale))
             from importlib.resources import as_file as _as_file
 
             try:
                 with _as_file(_mdi_font_path()) as font_file:
-                    glyph_font = ImageFont.truetype(str(font_file), glyph_size)
+                    # MDI glyphs have built-in em-square padding, so a font set to N
+                    # px renders a visual glyph noticeably smaller than N. Measure the
+                    # actual bbox at a reference size, then pick the real font size
+                    # that makes the bbox fill `icon_scale * short_side` pixels.
+                    ref_size = 200
+                    ref_font = ImageFont.truetype(str(font_file), ref_size)
+                    ref_bbox = draw.textbbox((0, 0), glyph, font=ref_font)
+                    ref_w = max(1, ref_bbox[2] - ref_bbox[0])
+                    ref_h = max(1, ref_bbox[3] - ref_bbox[1])
+                    scale = target_glyph_px / max(ref_w, ref_h)
+                    glyph_font_size = max(8, int(round(ref_size * scale)))
+                    glyph_font = ImageFont.truetype(str(font_file), glyph_font_size)
             except OSError as exc:
                 raise ProfileManagerError(
                     f"Could not load bundled MDI font: {exc}"
@@ -709,16 +808,16 @@ class ProfileManager:
             bbox = draw.textbbox((0, 0), glyph, font=glyph_font)
             gw = bbox[2] - bbox[0]
             gh = bbox[3] - bbox[1]
-            gx = (DEFAULT_ICON_SIZE[0] - gw) / 2 - bbox[0]
-            gy = (DEFAULT_ICON_SIZE[1] - gh) / 2 - bbox[1]
+            gx = (canvas_size[0] - gw) / 2 - bbox[0]
+            gy = (canvas_size[1] - gh) / 2 - bbox[1]
             draw.text((gx, gy), glyph, font=glyph_font, fill=resolved_icon_color)
         else:
             label_font = _resolve_font(font_size)
             bbox = draw.multiline_textbbox((0, 0), text or "", font=label_font, align="center")
             tw = bbox[2] - bbox[0]
             th = bbox[3] - bbox[1]
-            tx = (DEFAULT_ICON_SIZE[0] - tw) / 2
-            ty = (DEFAULT_ICON_SIZE[1] - th) / 2
+            tx = (canvas_size[0] - tw) / 2
+            ty = (canvas_size[1] - th) / 2
             draw.multiline_text(
                 (tx, ty), text or "", font=label_font, fill=text_color, align="center"
             )
@@ -727,7 +826,9 @@ class ProfileManager:
 
         result: dict[str, Any] = {
             "path": str(icon_path),
-            "size": {"width": DEFAULT_ICON_SIZE[0], "height": DEFAULT_ICON_SIZE[1]},
+            "size": {"width": canvas_size[0], "height": canvas_size[1]},
+            "shape": shape,
+            "transparent_bg": transparent_bg,
         }
         if canonical_icon_name:
             result["icon"] = f"mdi:{canonical_icon_name}"
@@ -1018,10 +1119,16 @@ class ProfileManager:
 
         return f"{col},{row}"
 
-    def _materialize_action(self, button: dict[str, Any], page_dir: Path) -> dict[str, Any]:
+    def _materialize_action(
+        self,
+        button: dict[str, Any],
+        page_dir: Path,
+        *,
+        controller_type: str = KEYPAD,
+    ) -> dict[str, Any]:
         raw_action = button.get("action")
         if raw_action is None:
-            action = self._build_action_from_fields(button)
+            action = self._build_action_from_fields(button, controller_type=controller_type)
         elif isinstance(raw_action, str):
             try:
                 action = json.loads(raw_action)
@@ -1066,14 +1173,35 @@ class ProfileManager:
             state_data["OutlineThickness"] = state_data.get("OutlineThickness", 2)
 
         icon_path = button.get("icon_path")
-        if icon_path:
-            state_data["Image"] = self._copy_icon_to_page(Path(icon_path).expanduser(), page_dir)
+        strip_background_path = button.get("strip_background_path")
+
+        if controller_type == ENCODER:
+            encoder_section = action.setdefault("Encoder", {})
+            if icon_path:
+                encoder_section["Icon"] = self._copy_icon_to_page(
+                    Path(icon_path).expanduser(), page_dir
+                )
+            if strip_background_path:
+                encoder_section["background"] = self._copy_icon_to_page(
+                    Path(strip_background_path).expanduser(), page_dir
+                )
+        else:
+            if strip_background_path:
+                raise ProfileValidationError(
+                    "strip_background_path is only valid for encoder/dial buttons."
+                )
+            if icon_path:
+                state_data["Image"] = self._copy_icon_to_page(
+                    Path(icon_path).expanduser(), page_dir
+                )
 
         states[state_index] = state_data
         action["States"] = states
         return action
 
-    def _build_action_from_fields(self, button: dict[str, Any]) -> dict[str, Any]:
+    def _build_action_from_fields(
+        self, button: dict[str, Any], *, controller_type: str = KEYPAD
+    ) -> dict[str, Any]:
         action_type = button.get("action_type")
         if action_type == "next_page":
             return self._build_navigation_action(direction="next")
@@ -1102,10 +1230,67 @@ class ProfileManager:
                 "UUID": action_uuid,
             }
 
+        # Encoder/dial buttons without any explicit action fields fall back to the
+        # bundled streamdeck-mcp dial plugin, which is the only action shell that
+        # allows per-instance Encoder.Icon / Encoder.background writes to survive.
+        if controller_type == ENCODER:
+            return self._build_mcp_dial_action(button)
+
         raise ProfileValidationError(
             "Button needs either 'action', 'path', 'action_type', "
             "or explicit plugin/action UUID fields."
         )
+
+    @staticmethod
+    def _any_button_needs_mcp_plugin(
+        buttons_by_controller: dict[str, list[dict[str, Any]]],
+    ) -> bool:
+        from streamdeck_plugin import PLUGIN_UUID
+
+        for controller_type, buttons in buttons_by_controller.items():
+            if controller_type != ENCODER:
+                continue
+            for button in buttons:
+                raw_action = button.get("action")
+                if isinstance(raw_action, dict):
+                    if (raw_action.get("Plugin") or {}).get("UUID") == PLUGIN_UUID:
+                        return True
+                elif raw_action is None:
+                    # Will be built as an MCP dial action iff no other action spec present.
+                    if not any(
+                        button.get(k)
+                        for k in ("path", "action_type", "plugin_uuid", "action_uuid")
+                    ):
+                        return True
+                if button.get("plugin_uuid") == PLUGIN_UUID:
+                    return True
+        return False
+
+    def install_mcp_plugin(self, *, force: bool = False) -> dict[str, Any]:
+        """Install the bundled streamdeck-mcp plugin into the Elgato Plugins dir.
+
+        Thin instance wrapper so callers that already hold a ProfileManager can
+        trigger an explicit install without importing the module-level helper.
+        """
+        return ensure_mcp_plugin_installed(force=force)
+
+    def _build_mcp_dial_action(self, button: dict[str, Any]) -> dict[str, Any]:
+        from streamdeck_plugin import ACTION_UUID, PLUGIN_UUID
+
+        return {
+            "ActionID": str(uuid.uuid4()),
+            "LinkedTitle": False,
+            "Name": "MCP Dial",
+            "Plugin": {
+                "Name": "streamdeck-mcp",
+                "UUID": PLUGIN_UUID,
+                "Version": "0.1.0",
+            },
+            "Settings": copy.deepcopy(button.get("settings", {})),
+            "State": 0,
+            "States": [{}],
+            "UUID": ACTION_UUID,
+        }
 
     def _build_navigation_action(self, *, direction: str) -> dict[str, Any]:
         if direction not in {"next", "previous"}:

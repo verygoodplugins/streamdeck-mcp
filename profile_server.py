@@ -79,7 +79,18 @@ async def list_tools() -> list[Tool]:
             "icon_path": {
                 "type": "string",
                 "description": (
-                    "Path to a local icon file. PNG is preferred; other formats are converted."
+                    "Path to a local icon file. PNG preferred; other formats are converted. "
+                    "Keypad buttons: 72x72 key face image. Encoder buttons: 72x72 dial Icon "
+                    "overlay on the touchstrip."
+                ),
+            },
+            "strip_background_path": {
+                "type": "string",
+                "description": (
+                    "Encoder/dial only: path to a 200x100 PNG used as the touchstrip "
+                    "segment background behind the dial. Generate one with "
+                    "streamdeck_create_icon(shape='touchstrip'). Writing this field on a "
+                    "keypad button is an error."
                 ),
             },
             "path": {
@@ -278,8 +289,30 @@ async def list_tools() -> list[Tool]:
                     "icon_scale": {
                         "type": "number",
                         "description": (
-                            "Fraction of the 72x72 canvas the glyph occupies "
-                            "(0.1-1.0). Defaults to 0.7."
+                            "Fraction of the canvas the glyph bounding box fills "
+                            "(0.1-1.0). Defaults to 1.0 — edge-to-edge, matching how "
+                            "Elgato's own icons fill the touchstrip slot. Reduce to "
+                            "~0.75-0.85 for keypad buttons that also have a bottom "
+                            "title so the glyph doesn't touch the label."
+                        ),
+                    },
+                    "shape": {
+                        "type": "string",
+                        "enum": ["button", "touchstrip"],
+                        "description": (
+                            "Output canvas. 'button' (default) is 72x72 — keypad keys "
+                            "and encoder dial faces. 'touchstrip' is 200x100 — per-segment "
+                            "background above a Stream Deck + / + XL dial; pair with a "
+                            "button's strip_background_path on streamdeck_write_page."
+                        ),
+                    },
+                    "transparent_bg": {
+                        "type": "boolean",
+                        "description": (
+                            "Generate an RGBA PNG with a transparent canvas instead of "
+                            "filling with bg_color. Use this for dial Icons that overlay a "
+                            "touchstrip background so the glyph composes naturally. Leave "
+                            "false (default) for keypad faces and touchstrip backgrounds."
                         ),
                     },
                     "text": {
@@ -339,6 +372,30 @@ async def list_tools() -> list[Tool]:
                 "properties": {},
             },
         ),
+        Tool(
+            name="streamdeck_install_mcp_plugin",
+            description=(
+                "Install the bundled streamdeck-mcp Stream Deck plugin into the user's "
+                "Elgato Plugins directory. The plugin is a minimal shell that declares "
+                "encoder support so that per-instance touchstrip icons and backgrounds "
+                "written by streamdeck_write_page survive an Elgato app restart. Idempotent "
+                "— returns installed=false when already present unless force=true. "
+                "streamdeck_write_page also auto-installs this plugin when an encoder "
+                "button targets it, so most callers do not need to invoke this directly."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "force": {
+                        "type": "boolean",
+                        "description": (
+                            "Reinstall the plugin even if it already exists. Useful after "
+                            "upgrading streamdeck-mcp."
+                        ),
+                    }
+                },
+            },
+        ),
     ]
 
 
@@ -381,12 +438,18 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 text=arguments.get("text"),
                 icon=arguments.get("icon"),
                 icon_color=arguments.get("icon_color"),
-                icon_scale=0.7 if _scale is None else _scale,
+                icon_scale=1.0 if _scale is None else _scale,
                 bg_color=arguments.get("bg_color", "#000000"),
                 text_color=arguments.get("text_color", "#ffffff"),
                 font_size=arguments.get("font_size", 18),
                 filename=arguments.get("filename"),
+                shape=arguments.get("shape", "button"),
+                transparent_bg=bool(arguments.get("transparent_bg", False)),
             )
+            return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+        if name == "streamdeck_install_mcp_plugin":
+            result = manager.install_mcp_plugin(force=bool(arguments.get("force", False)))
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         if name == "streamdeck_create_action":

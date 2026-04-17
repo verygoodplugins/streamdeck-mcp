@@ -65,9 +65,10 @@ uvx --from streamdeck-mcp streamdeck-mcp-usb
 | `streamdeck_read_profiles` | Lists desktop profiles and page directories from the active ProfilesV3 or ProfilesV2 store |
 | `streamdeck_read_page` | Reads a page manifest and returns simplified button details plus the raw manifest |
 | `streamdeck_write_page` | Creates a new page or rewrites an existing page manifest |
-| `streamdeck_create_icon` | Generates a 72x72 PNG icon from a Material Design Icons name (e.g. `mdi:cpu-64-bit`) or from text (but not both). ~7400 MDI icons are bundled offline; unknown names return close-match suggestions |
+| `streamdeck_create_icon` | Generates a PNG icon from a Material Design Icons name (e.g. `mdi:cpu-64-bit`) or from text (but not both). `shape="button"` (72x72, default) for keypad keys and encoder dial faces; `shape="touchstrip"` (200x100) for Stream Deck + / + XL dial segment backgrounds. ~7400 MDI icons are bundled offline; unknown names return close-match suggestions |
 | `streamdeck_create_action` | Creates an executable shell script in `~/StreamDeckScripts/` and returns an Open action block |
 | `streamdeck_restart_app` | Restarts the macOS Stream Deck desktop app after profile changes |
+| `streamdeck_install_mcp_plugin` | Installs the bundled streamdeck-mcp Stream Deck plugin into the user's Elgato Plugins directory. `streamdeck_write_page` auto-installs it when an encoder button needs it, so direct use is rarely necessary |
 
 ## How the Profile Writer Works
 
@@ -76,6 +77,7 @@ uvx --from streamdeck-mcp streamdeck-mcp-usb
 - `streamdeck_write_page` can accept raw native action objects, or use convenience fields like `path`, `action_type`, `plugin_uuid`, and `action_uuid`.
 - Generated icons are stored in `~/.streamdeck-mcp/generated-icons/`.
 - Generated shell scripts are stored in `~/StreamDeckScripts/`.
+- The bundled streamdeck-mcp Stream Deck plugin lives at `~/Library/Application Support/com.elgato.StreamDeck/Plugins/io.github.verygoodplugins.streamdeck-mcp.sdPlugin/` once installed. It's a minimal shell whose only job is to declare encoder support so per-instance `Encoder.Icon` / `Encoder.background` writes survive an Elgato app restart. `streamdeck_write_page` installs it automatically the first time an encoder button needs it.
 
 ## Editing Workflow (Important)
 

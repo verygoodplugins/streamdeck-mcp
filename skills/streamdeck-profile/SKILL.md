@@ -58,3 +58,46 @@ Or a raw native action object:
 ## When to Use the Legacy USB Server Instead
 
 Use `server.py` only when you explicitly want direct USB hardware control, on-device rendering, brightness control, or runtime button callbacks that do not depend on the Elgato desktop app.
+
+## Authoritative Elgato SDK References
+
+These are the source of truth for manifest schemas, image dimensions, and touchstrip behavior. Consult BEFORE empirical probing:
+
+- Getting started: https://docs.elgato.com/streamdeck/sdk/introduction/getting-started
+- Manifest reference: https://docs.elgato.com/streamdeck/sdk/references/manifest
+- Dials & Touch Strip guide: https://docs.elgato.com/streamdeck/sdk/guides/dials-and-touch-strip
+- Touch Strip Layout reference: https://docs.elgato.com/streamdeck/sdk/references/touch-strip-layout
+
+### Image dimensions (authoritative)
+
+| Surface | Size | @2x |
+|---------|------|-----|
+| Keypad state image | 72×72 | 144×144 |
+| Encoder dial Icon | 72×72 | 144×144 |
+| Encoder touchstrip background (per segment) | 200×100 | 400×200 |
+| Full-strip background (`Controllers[Encoder].Background`) | 1200×100 | — |
+| Plugin icon | 256×256 | 512×512 |
+| Action list icon | 20×20 | 40×40 |
+
+### Built-in touchstrip layouts
+
+| Layout | Semantics |
+|--------|-----------|
+| `$X1` | Title top, icon centered |
+| `$A0` | Title top, full-width image canvas center (used by streamdeck-mcp dial) |
+| `$A1` | Title top, icon left, text value right |
+| `$B1` | Title top, icon left, text + progress bar right |
+| `$B2` | Title top, icon left, text + gradient progress bar |
+| `$C1` | Title top, dual icon-left/progress-right rows |
+
+Custom layouts are supported as JSON shipped with the plugin.
+
+### Touchstrip custom art goes in the profile manifest, not `setFeedback`
+
+For static per-instance backgrounds/icons, write directly to the page manifest:
+
+- `Controllers[Encoder].Actions[<pos>].Encoder.Icon` → per-segment 72×72 icon path
+- `Controllers[Encoder].Actions[<pos>].Encoder.background` → per-segment 200×100 background path
+- `Controllers[Encoder].Background` → full 1200×100 strip background path
+
+These fields only survive a profile write when the action's plugin declares `Controllers: ["Encoder"]`. The bundled streamdeck-mcp plugin (`io.github.verygoodplugins.streamdeck-mcp.dial`) declares encoder support with layout `$A0`, so manifest writes of `Encoder.Icon`/`background` stick across quit/relaunch.

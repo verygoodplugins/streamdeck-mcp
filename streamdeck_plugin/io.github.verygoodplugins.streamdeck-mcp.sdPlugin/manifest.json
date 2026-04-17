@@ -1,0 +1,36 @@
+{
+    "Name": "streamdeck-mcp",
+    "Author": "Very Good Plugins",
+    "Description": "Renders images and titles set by the streamdeck-mcp profile writer on keypad keys and Stream Deck + touchstrip segments.",
+    "URL": "https://github.com/verygoodplugins/streamdeck-mcp",
+    "Version": "0.1.0",
+    "CodePath": "plugin.html",
+    "Icon": "Images/plugin",
+    "Category": "streamdeck-mcp",
+    "CategoryIcon": "Images/action",
+    "OS": [
+        { "Platform": "mac", "MinimumVersion": "11" },
+        { "Platform": "windows", "MinimumVersion": "10" }
+    ],
+    "SDKVersion": 2,
+    "Software": { "MinimumVersion": "6.5" },
+    "Actions": [
+        {
+            "UUID": "io.github.verygoodplugins.streamdeck-mcp.dial",
+            "Name": "MCP Dial",
+            "Tooltip": "Button or dial managed by streamdeck-mcp. Set image and title via streamdeck_write_page.",
+            "Icon": "Images/action",
+            "PropertyInspectorPath": "",
+            "States": [{ "Image": "Images/action", "TitleAlignment": "bottom" }],
+            "Controllers": ["Keypad", "Encoder"],
+            "Encoder": {
+                "StackColor": "#000000",
+                "TriggerDescription": {
+                    "Rotate": "",
+                    "Push": "",
+                    "Touch": ""
+                }
+            }
+        }
+    ]
+}

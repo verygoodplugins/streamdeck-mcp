@@ -48,10 +48,16 @@ name = "io.github.verygoodplugins/streamdeck-mcp"
 
 [tool.setuptools]
 py-modules = ["profile_manager", "profile_server", "server", "mdi_icons"]
-packages = ["streamdeck_assets"]
+packages = ["streamdeck_assets", "streamdeck_plugin"]
 
 [tool.setuptools.package-data]
 streamdeck_assets = ["*.ttf", "*.json", "MDI-LICENSE"]
+streamdeck_plugin = [
+    "io.github.verygoodplugins.streamdeck-mcp.sdPlugin/manifest.json",
+    "io.github.verygoodplugins.streamdeck-mcp.sdPlugin/plugin.html",
+    "io.github.verygoodplugins.streamdeck-mcp.sdPlugin/plugin.js",
+    "io.github.verygoodplugins.streamdeck-mcp.sdPlugin/Images/*.png",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
