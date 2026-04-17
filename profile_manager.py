@@ -20,6 +20,7 @@ import shutil
 import string
 import subprocess
 import sys
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,6 +71,13 @@ MODEL_LAYOUTS: dict[str, dict[str, tuple[int, int]]] = {
     "UI Stream Deck": {KEYPAD: (4, 2)},
 }
 
+# The Elgato Stream Deck desktop app caches every profile in memory and rewrites the
+# on-disk manifests when it quits, so any edit made while it is running gets clobbered
+# the next time the user closes or restarts the app.
+STREAM_DECK_APP_PROCESS_NAMES = ("Stream Deck", "Elgato Stream Deck")
+DEFAULT_STREAM_DECK_APP_PATH = Path("/Applications/Elgato Stream Deck.app")
+STREAM_DECK_APP_PATH_ENV = "STREAMDECK_APP_PATH"
+
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 POSITION_PATTERN = re.compile(r"^\d+,\d+$")
 UUID_PATTERN = re.compile(
@@ -100,6 +108,16 @@ class PageNotFoundError(ProfileManagerError):
 
 class ProfileValidationError(ProfileManagerError):
     """Raised when inputs for profile operations are invalid."""
+
+
+class StreamDeckAppRunningError(ProfileManagerError):
+    """Raised when a write is attempted while the Elgato desktop app is running.
+
+    The app rewrites every profile manifest from its in-memory snapshot on quit, so
+    writes made while it is running are silently discarded. Callers must quit the
+    app first (pass `auto_quit_app=True` to `write_page`) and then call
+    `restart_app` once their edits are complete to see the changes.
+    """
 
 
 @dataclass
@@ -277,6 +295,79 @@ def _count_icons(page_dir: Path) -> int:
     return len([path for path in images_dir.iterdir() if path.is_file()])
 
 
+def _resolve_app_path() -> Path:
+    override = os.environ.get(STREAM_DECK_APP_PATH_ENV)
+    if override:
+        return Path(override).expanduser()
+    return DEFAULT_STREAM_DECK_APP_PATH
+
+
+def is_stream_deck_app_running() -> bool:
+    """Return True if the Elgato Stream Deck desktop app is currently running."""
+
+    if sys.platform != "darwin":
+        return False
+
+    for name in STREAM_DECK_APP_PROCESS_NAMES:
+        result = subprocess.run(
+            ["pgrep", "-x", name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return True
+    return False
+
+
+def stop_stream_deck_app(*, graceful_timeout: float = 3.0) -> dict[str, Any]:
+    """Quit the Elgato Stream Deck desktop app.
+
+    Tries an AppleScript quit first so the app can persist any unrelated state, then
+    falls back to `killall` if it does not exit in time. Returns a small report about
+    which path was taken.
+    """
+
+    if sys.platform != "darwin":
+        return {"stopped": False, "graceful": [], "forced": [], "reason": "non-darwin platform"}
+
+    if not is_stream_deck_app_running():
+        return {"stopped": False, "graceful": [], "forced": [], "reason": "not running"}
+
+    graceful: list[str] = []
+    for name in STREAM_DECK_APP_PROCESS_NAMES:
+        result = subprocess.run(
+            ["osascript", "-e", f'tell application "{name}" to quit'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            graceful.append(name)
+
+    deadline = time.monotonic() + graceful_timeout
+    while time.monotonic() < deadline and is_stream_deck_app_running():
+        time.sleep(0.2)
+
+    forced: list[str] = []
+    if is_stream_deck_app_running():
+        for name in STREAM_DECK_APP_PROCESS_NAMES:
+            result = subprocess.run(
+                ["killall", name],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                forced.append(name)
+
+    return {
+        "stopped": not is_stream_deck_app_running(),
+        "graceful": graceful,
+        "forced": forced,
+    }
+
+
 class ProfileManager:
     """Read and write Elgato Stream Deck profiles."""
 
@@ -415,8 +506,29 @@ class ProfileManager:
         clear_existing: bool = True,
         create_new: bool = False,
         make_current: bool = False,
+        auto_quit_app: bool = False,
     ) -> dict[str, Any]:
         """Create a page or rewrite an existing page manifest."""
+
+        app_stop_report: dict[str, Any] | None = None
+        if is_stream_deck_app_running():
+            if not auto_quit_app:
+                raise StreamDeckAppRunningError(
+                    "The Elgato Stream Deck app is running and will overwrite this "
+                    "edit on quit. Retry with auto_quit_app=True to quit it first, "
+                    "then call streamdeck_restart_app once your edits are complete "
+                    "to apply the changes."
+                )
+            app_stop_report = stop_stream_deck_app()
+            stop_failed = not app_stop_report.get("stopped", False)
+            still_running = is_stream_deck_app_running()
+            if stop_failed or still_running:
+                reason = app_stop_report.get("reason", "")
+                detail = f" Reason: {reason}." if reason else ""
+                raise StreamDeckAppRunningError(
+                    f"The Elgato Stream Deck app could not be stopped.{detail} Aborting "
+                    "page write because the running app may overwrite these edits on quit."
+                )
 
         profile_dir, profile_manifest = self._resolve_profile(
             profile_name=profile_name, profile_id=profile_id
@@ -518,6 +630,7 @@ class ProfileManager:
             "button_count": total_button_count,
             "page_name": page_manifest.get("Name", ""),
             "manifest_path": str(page_dir / "manifest.json"),
+            "app_quit": app_stop_report,
         }
 
     def create_icon(
@@ -599,40 +712,34 @@ class ProfileManager:
                 "streamdeck_restart_app is currently only supported on macOS."
             )
 
-        killed = []
-        for app_name in ("Elgato Stream Deck", "Stream Deck"):
-            result = subprocess.run(
-                ["killall", app_name],
-                capture_output=True,
-                text=True,
-                check=False,
+        app_path = _resolve_app_path()
+        if not app_path.exists():
+            raise ProfileManagerError(
+                f"Stream Deck app not found at {app_path}. "
+                f"Set {STREAM_DECK_APP_PATH_ENV} to override the default install path."
             )
-            if result.returncode == 0:
-                killed.append(app_name)
 
-        open_result = subprocess.run(
-            ["open", "-a", "Stream Deck"],
+        stop_report = stop_stream_deck_app()
+
+        # `open -a <name>` relies on LaunchServices name lookup, which returns error
+        # -600 on some systems even when the bundle is present. Launching by explicit
+        # path bypasses that lookup.
+        result = subprocess.run(
+            ["open", str(app_path)],
             capture_output=True,
             text=True,
             check=False,
         )
-        if open_result.returncode != 0:
-            fallback = subprocess.run(
-                ["open", "-a", "Elgato Stream Deck"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            open_result = fallback
-
-        if open_result.returncode != 0:
+        if result.returncode != 0:
+            message = result.stderr.strip() or result.stdout.strip()
             raise ProfileManagerError(
-                open_result.stderr.strip() or "Failed to relaunch Stream Deck app."
+                f"Failed to relaunch Stream Deck ({app_path}): {message or 'unknown error'}"
             )
 
         return {
-            "killed": killed,
             "restarted": True,
+            "app_path": str(app_path),
+            "stop": stop_report,
         }
 
     def _resolve_profile(

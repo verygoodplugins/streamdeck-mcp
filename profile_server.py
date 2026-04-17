@@ -23,6 +23,7 @@ from profile_manager import (
     ProfileManagerError,
     ProfileNotFoundError,
     ProfileValidationError,
+    StreamDeckAppRunningError,
 )
 
 logging.basicConfig(
@@ -189,7 +190,12 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="streamdeck_write_page",
             description=(
-                "Create a new page or replace/update an existing Stream Deck desktop page manifest."
+                "Create a new page or replace/update an existing Stream Deck desktop "
+                "page manifest. IMPORTANT: the Elgato desktop app overwrites profile "
+                "manifests from its in-memory state on quit, so writes made while the "
+                "app is running are lost. This tool refuses to write when the app is "
+                "running unless auto_quit_app=True is passed. Call streamdeck_restart_app "
+                "once your edits are complete to make the changes visible on the device."
             ),
             inputSchema={
                 "type": "object",
@@ -225,6 +231,16 @@ async def list_tools() -> list[Tool]:
                         "type": "boolean",
                         "description": (
                             "When true, make the page the active current page after writing."
+                        ),
+                    },
+                    "auto_quit_app": {
+                        "type": "boolean",
+                        "description": (
+                            "If true and the Elgato Stream Deck desktop app is "
+                            "running, quit it (graceful AppleScript first, then "
+                            "killall) before writing. Required when the app is "
+                            "running or the write will raise an error. Defaults to "
+                            "false so callers must explicitly consent to quitting it."
                         ),
                     },
                 },
@@ -322,6 +338,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 clear_existing=arguments.get("clear_existing", True),
                 create_new=arguments.get("create_new", False),
                 make_current=arguments.get("make_current", False),
+                auto_quit_app=arguments.get("auto_quit_app", False),
             )
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
@@ -350,6 +367,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
         return [TextContent(type="text", text=f"❌ Unknown tool: {name}")]
 
+    except StreamDeckAppRunningError as exc:
+        return [TextContent(type="text", text=f"⚠️ {exc}")]
     except (
         ProfileManagerError,
         ProfileNotFoundError,
