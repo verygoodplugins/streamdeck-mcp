@@ -407,7 +407,7 @@ def test_write_page_auto_quit_app_stops_then_writes(
     stop_report = {"stopped": True, "graceful": ["Stream Deck"], "forced": []}
 
     with (
-        patch("profile_manager.is_stream_deck_app_running", return_value=True),
+        patch("profile_manager.is_stream_deck_app_running", side_effect=[True, False]),
         patch("profile_manager.stop_stream_deck_app", return_value=stop_report) as stop_mock,
     ):
         result = manager.write_page(
@@ -424,6 +424,29 @@ def test_write_page_auto_quit_app_stops_then_writes(
         directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
     )
     assert page["buttons"][0]["title"] == "x"
+
+
+def test_write_page_auto_quit_app_raises_when_stop_fails(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    stop_report = {"stopped": False, "graceful": [], "forced": [], "reason": "killall failed"}
+
+    with (
+        patch("profile_manager.is_stream_deck_app_running", return_value=True),
+        patch("profile_manager.stop_stream_deck_app", return_value=stop_report),
+    ):
+        with pytest.raises(StreamDeckAppRunningError, match="could not be stopped"):
+            manager.write_page(
+                profile_name="Default Profile",
+                directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                buttons=[{"key": 0, "title": "x", "action_type": "next_page"}],
+                auto_quit_app=True,
+            )
 
 
 def test_write_page_records_no_quit_when_app_not_running(
@@ -483,7 +506,6 @@ def test_restart_app_errors_when_app_missing(sample_profiles_v3: Path, tmp_path:
     with (
         patch("profile_manager.sys.platform", "darwin"),
         patch.dict("os.environ", {"STREAMDECK_APP_PATH": str(missing_app)}),
-        patch("profile_manager.stop_stream_deck_app", return_value={"stopped": True}),
     ):
         with pytest.raises(ProfileManagerError, match="not found"):
             manager.restart_app()

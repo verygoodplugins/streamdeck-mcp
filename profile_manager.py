@@ -278,10 +278,10 @@ def stop_stream_deck_app(*, graceful_timeout: float = 3.0) -> dict[str, Any]:
     """
 
     if sys.platform != "darwin":
-        return {"stopped": False, "reason": "non-darwin platform"}
+        return {"stopped": False, "graceful": [], "forced": [], "reason": "non-darwin platform"}
 
     if not is_stream_deck_app_running():
-        return {"stopped": False, "reason": "not running"}
+        return {"stopped": False, "graceful": [], "forced": [], "reason": "not running"}
 
     graceful: list[str] = []
     for name in STREAM_DECK_APP_PROCESS_NAMES:
@@ -461,6 +461,11 @@ class ProfileManager:
                     "to apply the changes."
                 )
             app_stop_report = stop_stream_deck_app()
+            if not app_stop_report.get("stopped", False) or is_stream_deck_app_running():
+                raise StreamDeckAppRunningError(
+                    "The Elgato Stream Deck app could not be stopped. Aborting page "
+                    "write because the running app may overwrite these edits on quit."
+                )
 
         profile_dir, profile_manifest = self._resolve_profile(
             profile_name=profile_name, profile_id=profile_id
@@ -619,14 +624,14 @@ class ProfileManager:
                 "streamdeck_restart_app is currently only supported on macOS."
             )
 
-        stop_report = stop_stream_deck_app()
-
         app_path = _resolve_app_path()
         if not app_path.exists():
             raise ProfileManagerError(
                 f"Stream Deck app not found at {app_path}. "
                 f"Set {STREAM_DECK_APP_PATH_ENV} to override the default install path."
             )
+
+        stop_report = stop_stream_deck_app()
 
         # `open -a <name>` relies on LaunchServices name lookup, which returns error
         # -600 on some systems even when the bundle is present. Launching by explicit
