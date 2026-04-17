@@ -39,20 +39,35 @@ DEFAULT_FONT_SIZE = 12
 DEFAULT_TITLE_ALIGNMENT = "bottom"
 DEFAULT_ICON_SIZE = (72, 72)
 
+KEYPAD = "Keypad"
+ENCODER = "Encoder"
+
+CONTROLLER_ALIASES: dict[str, str] = {
+    "keypad": KEYPAD,
+    "key": KEYPAD,
+    "button": KEYPAD,
+    "encoder": ENCODER,
+    "dial": ENCODER,
+}
+
 DEFAULT_PAGE_MANIFEST = {
     "Controllers": [
         {
             "Actions": None,
-            "Type": "Keypad",
+            "Type": KEYPAD,
         }
     ],
     "Icon": "",
     "Name": "",
 }
 
-MODEL_LAYOUTS: dict[str, tuple[int, int]] = {
-    "20GBA9901": (5, 3),
-    "UI Stream Deck": (4, 2),
+MODEL_LAYOUTS: dict[str, dict[str, tuple[int, int]]] = {
+    # Stream Deck (Original)
+    "20GBA9901": {KEYPAD: (5, 3)},
+    # Stream Deck + XL (32 keys, 6 dials with 1200x100 touchstrip)
+    "20GBX9901": {KEYPAD: (8, 4), ENCODER: (6, 1)},
+    # Emulator used by the Elgato desktop app
+    "UI Stream Deck": {KEYPAD: (4, 2)},
 }
 
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -183,12 +198,48 @@ def get_profiles_dir(version: str = "auto") -> Path:
     )
 
 
-def _controller_actions(page_manifest: dict[str, Any]) -> dict[str, Any]:
-    controllers = page_manifest.get("Controllers") or []
-    if not controllers:
+def _find_controller(page_manifest: dict[str, Any], controller_type: str) -> dict[str, Any] | None:
+    for controller in page_manifest.get("Controllers") or []:
+        if controller.get("Type") == controller_type:
+            return controller
+    return None
+
+
+def _ensure_controller(page_manifest: dict[str, Any], controller_type: str) -> dict[str, Any]:
+    controllers = page_manifest.setdefault("Controllers", [])
+    for controller in controllers:
+        if controller.get("Type") == controller_type:
+            return controller
+    new_controller: dict[str, Any] = {"Type": controller_type, "Actions": None}
+    controllers.append(new_controller)
+    return new_controller
+
+
+def _controller_actions(
+    page_manifest: dict[str, Any], controller_type: str = KEYPAD
+) -> dict[str, Any]:
+    controller = _find_controller(page_manifest, controller_type)
+    if not controller:
         return {}
-    actions = controllers[0].get("Actions")
-    return actions or {}
+    return controller.get("Actions") or {}
+
+
+def _normalize_controller(value: str | None) -> str:
+    if not value:
+        return KEYPAD
+    canonical = CONTROLLER_ALIASES.get(value.lower())
+    if canonical is None:
+        raise ProfileValidationError(
+            f"Unknown controller '{value}'. Use one of: {sorted(set(CONTROLLER_ALIASES))}"
+        )
+    return canonical
+
+
+def _total_action_count(page_manifest: dict[str, Any]) -> int:
+    return sum(
+        len(controller.get("Actions") or {})
+        for controller in page_manifest.get("Controllers") or []
+    )
 
 
 def _slugify(value: str) -> str:
@@ -296,37 +347,44 @@ class ProfileManager:
             directory_id=directory_id,
         )
         page_manifest = _load_json(page_ref.manifest_path)
-        columns, rows = self._resolve_layout(profile_manifest, page_manifest)
+        keypad_cols, keypad_rows = self._resolve_layout(profile_manifest, page_manifest, KEYPAD)
 
-        buttons = []
-        for position, action in sorted(
-            _controller_actions(page_manifest).items(),
-            key=lambda item: self._position_sort_key(item[0]),
-        ):
-            col, row = [int(part) for part in position.split(",")]
-            key = (row * columns) + col
-            state_index = min(
-                max(int(action.get("State", 0)), 0), max(len(action.get("States", [{}])) - 1, 0)
-            )
-            states = action.get("States") or [{}]
-            active_state = states[state_index] if states else {}
-            buttons.append(
-                {
-                    "key": key,
-                    "position": position,
-                    "action_id": action.get("ActionID"),
-                    "action_uuid": action.get("UUID"),
-                    "plugin_uuid": action.get("Plugin", {}).get("UUID"),
-                    "plugin_name": action.get("Plugin", {}).get("Name"),
-                    "name": action.get("Name"),
-                    "state": action.get("State", 0),
-                    "title": active_state.get("Title"),
-                    "image": active_state.get("Image"),
-                    "settings": action.get("Settings", {}),
-                    "show_title": active_state.get("ShowTitle"),
-                    "raw": action,
-                }
-            )
+        buttons: list[dict[str, Any]] = []
+        layouts: dict[str, dict[str, int]] = {}
+
+        for controller in page_manifest.get("Controllers") or []:
+            controller_type = controller.get("Type", KEYPAD)
+            cols, rows = self._resolve_layout(profile_manifest, page_manifest, controller_type)
+            layouts[controller_type.lower()] = {"columns": cols, "rows": rows}
+
+            actions = controller.get("Actions") or {}
+            for position, action in sorted(
+                actions.items(),
+                key=lambda item: self._position_sort_key(item[0]),
+            ):
+                col, row = [int(part) for part in position.split(",")]
+                key = (row * cols + col) if cols else col
+                states = action.get("States") or [{}]
+                state_index = min(max(int(action.get("State", 0)), 0), max(len(states) - 1, 0))
+                active_state = states[state_index] if states else {}
+                buttons.append(
+                    {
+                        "controller": controller_type.lower(),
+                        "key": key,
+                        "position": position,
+                        "action_id": action.get("ActionID"),
+                        "action_uuid": action.get("UUID"),
+                        "plugin_uuid": action.get("Plugin", {}).get("UUID"),
+                        "plugin_name": action.get("Plugin", {}).get("Name"),
+                        "name": action.get("Name"),
+                        "state": action.get("State", 0),
+                        "title": active_state.get("Title"),
+                        "image": active_state.get("Image"),
+                        "settings": action.get("Settings", {}),
+                        "show_title": active_state.get("ShowTitle"),
+                        "raw": action,
+                    }
+                )
 
         return {
             "profiles_root": self.profiles_dir.name,
@@ -339,7 +397,8 @@ class ProfileManager:
                 "default_page_uuid": profile_manifest.get("Pages", {}).get("Default"),
             },
             "page": page_ref.to_dict(),
-            "layout": {"columns": columns, "rows": rows},
+            "layout": {"columns": keypad_cols, "rows": keypad_rows},
+            "layouts": layouts,
             "buttons": buttons,
             "raw_manifest": page_manifest,
         }
@@ -389,17 +448,41 @@ class ProfileManager:
         if page_name is not None:
             page_manifest["Name"] = page_name
 
-        columns, rows = self._resolve_layout(profile_manifest, page_manifest)
-        actions = {} if clear_existing else copy.deepcopy(_controller_actions(page_manifest))
+        # Group incoming buttons by the controller they target so a single write can
+        # update the Keypad and Encoder controllers together without touching the other.
+        buttons_by_controller: dict[str, list[dict[str, Any]]] = {}
         for button in buttons:
-            position = self._resolve_button_position(button, columns=columns, rows=rows)
-            actions[position] = self._materialize_action(button, page_dir)
+            controller_type = _normalize_controller(button.get("controller"))
+            buttons_by_controller.setdefault(controller_type, []).append(button)
 
-        controllers = page_manifest.setdefault("Controllers", [{"Type": "Keypad"}])
-        if not controllers:
-            controllers.append({"Type": "Keypad"})
-        controllers[0]["Type"] = controllers[0].get("Type", "Keypad")
-        controllers[0]["Actions"] = actions or None
+        # When clear_existing is requested but no buttons were supplied, default to
+        # targeting the Keypad controller so that the caller can still clear a page
+        # by writing an empty button list (restores pre-multi-controller behaviour).
+        if clear_existing and not buttons_by_controller:
+            buttons_by_controller[KEYPAD] = []
+
+        layouts_out: dict[str, dict[str, int]] = {}
+
+        for controller_type, ctl_buttons in buttons_by_controller.items():
+            cols, rows = self._resolve_layout(profile_manifest, page_manifest, controller_type)
+            if cols <= 0 or rows <= 0:
+                raise ProfileValidationError(
+                    f"Device model does not expose a '{controller_type}' controller."
+                )
+            controller = _ensure_controller(page_manifest, controller_type)
+            existing = {} if clear_existing else copy.deepcopy(controller.get("Actions") or {})
+            for button in ctl_buttons:
+                position = self._resolve_button_position(button, columns=cols, rows=rows)
+                existing[position] = self._materialize_action(button, page_dir)
+            controller["Actions"] = existing or None
+            layouts_out[controller_type.lower()] = {"columns": cols, "rows": rows}
+
+        # New pages always carry a Keypad controller slot so the Elgato app can render them.
+        if create_new:
+            _ensure_controller(page_manifest, KEYPAD)
+
+        primary_cols, primary_rows = self._resolve_layout(profile_manifest, page_manifest, KEYPAD)
+        total_button_count = _total_action_count(page_manifest)
 
         if create_new:
             pages_section = profile_manifest.setdefault("Pages", {})
@@ -430,8 +513,9 @@ class ProfileManager:
             "page_index": None if create_new else page_index,
             "directory_id": page_dir.name,
             "page_uuid": page_uuid,
-            "layout": {"columns": columns, "rows": rows},
-            "button_count": len(actions),
+            "layout": {"columns": primary_cols, "rows": primary_rows},
+            "layouts": layouts_out,
+            "button_count": total_button_count,
             "page_name": page_manifest.get("Name", ""),
             "manifest_path": str(page_dir / "manifest.json"),
         }
@@ -672,7 +756,6 @@ class ProfileManager:
         is_current: bool,
     ) -> PageRef:
         page_manifest = _load_json(manifest_path)
-        actions = _controller_actions(page_manifest)
         return PageRef(
             page_index=page_index,
             directory_id=directory_id,
@@ -683,7 +766,7 @@ class ProfileManager:
             is_default=is_default,
             is_current=is_current,
             name=str(page_manifest.get("Name", "")),
-            button_count=len(actions),
+            button_count=_total_action_count(page_manifest),
             icon_count=_count_icons(manifest_path.parent),
         )
 
@@ -715,18 +798,23 @@ class ProfileManager:
         self,
         profile_manifest: dict[str, Any],
         page_manifest: dict[str, Any] | None = None,
+        controller_type: str = KEYPAD,
     ) -> tuple[int, int]:
         device_model = str(profile_manifest.get("Device", {}).get("Model", ""))
-        if device_model in MODEL_LAYOUTS:
-            return MODEL_LAYOUTS[device_model]
+        model_entry = MODEL_LAYOUTS.get(device_model)
+        if model_entry and controller_type in model_entry:
+            return model_entry[controller_type]
 
         if page_manifest:
-            actions = _controller_actions(page_manifest)
+            actions = _controller_actions(page_manifest, controller_type)
             if actions:
                 cols = max(int(position.split(",")[0]) for position in actions) + 1
                 rows = max(int(position.split(",")[1]) for position in actions) + 1
                 if cols > 0 and rows > 0:
                     return cols, rows
+
+        if controller_type == ENCODER:
+            return (0, 0)
 
         return (5, 3)
 

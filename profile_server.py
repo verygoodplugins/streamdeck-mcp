@@ -43,14 +43,31 @@ async def list_tools() -> list[Tool]:
     button_schema = {
         "type": "object",
         "properties": {
+            "controller": {
+                "type": "string",
+                "enum": ["keypad", "key", "button", "encoder", "dial"],
+                "default": "keypad",
+                "description": (
+                    "Which physical controller this button targets. "
+                    "'keypad' (default) addresses the LCD keys; "
+                    "'encoder' (aka 'dial') addresses the rotary/touch dials on "
+                    "Stream Deck + and + XL. "
+                    "The key/position indexes are scoped to the chosen controller."
+                ),
+            },
             "key": {
                 "type": "integer",
-                "description": "Linear button index (0-based, left-to-right, top-to-bottom).",
+                "description": (
+                    "Button index scoped to the chosen controller (0-based). "
+                    "For keypad controllers the index is row-major "
+                    "(left-to-right, then top-to-bottom). "
+                    "For encoder/dial controllers it is a simple 0..N-1 dial index."
+                ),
             },
             "position": {
                 "type": "string",
                 "description": (
-                    "Native position string 'col,row'. "
+                    "Native position string 'col,row' within the chosen controller. "
                     "Use this when you already know the grid slot."
                 ),
             },
