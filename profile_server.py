@@ -249,19 +249,52 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="streamdeck_create_icon",
             description=(
-                "Generate a 72x72 PNG icon with centered text and colors, "
-                "then return its filesystem path."
+                "Generate a 72x72 PNG icon. Supply 'icon' (a Material Design Icons "
+                "name such as 'mdi:cpu-64-bit', 'mdi:volume-high', 'mdi:github') OR "
+                "'text' for a centered text icon — not both. For labels on icon "
+                "buttons, set the button's 'title' field on streamdeck_write_page "
+                "instead of baking text here (Elgato overlays titles on images). "
+                "~7400 MDI icons are bundled and resolved offline; unknown names "
+                "return close-match suggestions. Returns the PNG filesystem path."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "text": {"type": "string"},
+                    "icon": {
+                        "type": "string",
+                        "description": (
+                            "Material Design Icons name, e.g. 'mdi:cpu-64-bit', "
+                            "'mdi:volume-high', 'mdi:microphone'. The 'mdi:' prefix is "
+                            "optional. Aliases are honored."
+                        ),
+                    },
+                    "icon_color": {
+                        "type": "string",
+                        "description": (
+                            "Hex color for the icon glyph, e.g. '#00ff88'. "
+                            "Defaults to text_color."
+                        ),
+                    },
+                    "icon_scale": {
+                        "type": "number",
+                        "description": (
+                            "Fraction of the 72x72 canvas the glyph occupies "
+                            "(0.1-1.0). Defaults to 0.7."
+                        ),
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": (
+                            "Text for a centered text-only icon. Mutually exclusive "
+                            "with 'icon'. For icon buttons that need a label, use "
+                            "the button's 'title' field on streamdeck_write_page."
+                        ),
+                    },
                     "bg_color": {"type": "string"},
                     "text_color": {"type": "string"},
                     "font_size": {"type": "integer"},
                     "filename": {"type": "string"},
                 },
-                "required": ["text"],
             },
         ),
         Tool(
@@ -344,7 +377,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
         if name == "streamdeck_create_icon":
             result = manager.create_icon(
-                text=arguments["text"],
+                text=arguments.get("text"),
+                icon=arguments.get("icon"),
+                icon_color=arguments.get("icon_color"),
+                icon_scale=arguments.get("icon_scale", 0.7),
                 bg_color=arguments.get("bg_color", "#000000"),
                 text_color=arguments.get("text_color", "#ffffff"),
                 font_size=arguments.get("font_size", 18),

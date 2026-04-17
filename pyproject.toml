@@ -47,7 +47,11 @@ Issues = "https://github.com/verygoodplugins/streamdeck-mcp/issues"
 name = "io.github.verygoodplugins/streamdeck-mcp"
 
 [tool.setuptools]
-py-modules = ["profile_manager", "profile_server", "server"]
+py-modules = ["profile_manager", "profile_server", "server", "mdi_icons"]
+packages = ["streamdeck_assets"]
+
+[tool.setuptools.package-data]
+streamdeck_assets = ["*.ttf", "*.json", "MDI-LICENSE"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

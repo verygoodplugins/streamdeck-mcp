@@ -636,39 +636,99 @@ class ProfileManager:
     def create_icon(
         self,
         *,
-        text: str,
+        text: str | None = None,
+        icon: str | None = None,
+        icon_color: str | None = None,
+        icon_scale: float = 0.7,
         bg_color: str = DEFAULT_BG_COLOR,
         text_color: str = DEFAULT_TEXT_COLOR,
         font_size: int = 18,
         filename: str | None = None,
     ) -> dict[str, Any]:
-        """Generate a simple 72x72 PNG icon with centered text."""
+        """Generate a 72x72 PNG icon.
+
+        Provide exactly one of:
+        - ``icon``: a Material Design Icons name (e.g. ``mdi:cpu-64-bit``) rendered in
+          ``icon_color`` over ``bg_color``. Labels should be set via the button's
+          ``title`` field on ``streamdeck_write_page`` — Elgato renders titles over the
+          image, so baking text into the PNG would produce double text.
+        - ``text``: centered text rendered in ``text_color`` over ``bg_color``.
+
+        Icon names accept ``mdi:cpu``, ``mdi-cpu``, or bare ``cpu``; aliases are
+        honored. On an unknown name the error message lists close-match suggestions.
+        """
 
         if not HAS_PILLOW:
             raise ProfileManagerError("Pillow is required for icon generation.")
 
+        if not text and not icon:
+            raise ProfileValidationError("create_icon requires 'text' or 'icon'.")
+
+        if text and icon:
+            raise ProfileValidationError(
+                "create_icon accepts either 'text' or 'icon', not both. "
+                "Use the button's 'title' field on streamdeck_write_page for labels."
+            )
+
+        if not 0.1 <= icon_scale <= 1.0:
+            raise ProfileValidationError("icon_scale must be between 0.1 and 1.0.")
+
         bg_color = _ensure_hex_color(bg_color, field_name="bg_color")
         text_color = _ensure_hex_color(text_color, field_name="text_color")
+        resolved_icon_color = _ensure_hex_color(
+            icon_color or text_color, field_name="icon_color"
+        )
 
         self.generated_icons_dir.mkdir(parents=True, exist_ok=True)
-        stem = _slugify(filename or text or "streamdeck-icon")
+        canonical_icon_name: str | None = None
+        glyph: str | None = None
+        if icon:
+            from mdi_icons import font_path as _mdi_font_path
+            from mdi_icons import resolve as _resolve_mdi
+
+            canonical_icon_name, glyph = _resolve_mdi(icon)
+
+        stem_source = filename or canonical_icon_name or text or "streamdeck-icon"
+        stem = _slugify(stem_source)
         icon_path = self.generated_icons_dir / f"{stem}.png"
 
         image = Image.new("RGB", DEFAULT_ICON_SIZE, bg_color)
         draw = ImageDraw.Draw(image)
-        font = _resolve_font(font_size)
-        bbox = draw.multiline_textbbox((0, 0), text, font=font, align="center")
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        x = (DEFAULT_ICON_SIZE[0] - text_width) / 2
-        y = (DEFAULT_ICON_SIZE[1] - text_height) / 2
-        draw.multiline_text((x, y), text, font=font, fill=text_color, align="center")
+
+        if glyph is not None:
+            glyph_size = max(8, int(DEFAULT_ICON_SIZE[1] * icon_scale))
+            try:
+                glyph_font = ImageFont.truetype(str(_mdi_font_path()), glyph_size)
+            except OSError as exc:
+                raise ProfileManagerError(
+                    f"Could not load bundled MDI font: {exc}"
+                ) from exc
+            bbox = draw.textbbox((0, 0), glyph, font=glyph_font)
+            gw = bbox[2] - bbox[0]
+            gh = bbox[3] - bbox[1]
+            gx = (DEFAULT_ICON_SIZE[0] - gw) / 2 - bbox[0]
+            gy = (DEFAULT_ICON_SIZE[1] - gh) / 2 - bbox[1]
+            draw.text((gx, gy), glyph, font=glyph_font, fill=resolved_icon_color)
+        else:
+            label_font = _resolve_font(font_size)
+            bbox = draw.multiline_textbbox((0, 0), text or "", font=label_font, align="center")
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            tx = (DEFAULT_ICON_SIZE[0] - tw) / 2
+            ty = (DEFAULT_ICON_SIZE[1] - th) / 2
+            draw.multiline_text(
+                (tx, ty), text or "", font=label_font, fill=text_color, align="center"
+            )
+
         image.save(icon_path, format="PNG")
 
-        return {
+        result: dict[str, Any] = {
             "path": str(icon_path),
             "size": {"width": DEFAULT_ICON_SIZE[0], "height": DEFAULT_ICON_SIZE[1]},
         }
+        if canonical_icon_name:
+            result["icon"] = f"mdi:{canonical_icon_name}"
+        return result
 
     def create_action(
         self,

@@ -729,3 +729,86 @@ def test_restart_app_errors_when_app_missing(sample_profiles_v3: Path, tmp_path:
     ):
         with pytest.raises(ProfileManagerError, match="not found"):
             manager.restart_app()
+
+
+def _icon_manager(tmp_path: Path) -> ProfileManager:
+    return ProfileManager(
+        profiles_dir=tmp_path / "profiles",
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+
+def test_create_icon_mdi_glyph_only(tmp_path: Path) -> None:
+    from PIL import Image
+
+    manager = _icon_manager(tmp_path)
+    result = manager.create_icon(
+        icon="mdi:cpu-64-bit",
+        icon_color="#00ff88",
+        bg_color="#1a1a1a",
+    )
+
+    assert result["icon"] == "mdi:cpu-64-bit"
+    assert result["size"] == {"width": 72, "height": 72}
+
+    png = Image.open(result["path"])
+    assert png.size == (72, 72)
+    # A glyph pixel near center should lean toward icon_color (#00ff88), not bg (#1a1a1a).
+    r, g, b = png.getpixel((36, 36))[:3]
+    assert g > r and g > 100, f"expected greenish center pixel, got {(r, g, b)}"
+
+
+def test_create_icon_rejects_icon_and_text_together(tmp_path: Path) -> None:
+    """The Elgato app overlays the button 'title' on top of its image; baking text
+    into the PNG on an icon button produces doubled text. The tool enforces that
+    callers pick one or the other."""
+    manager = _icon_manager(tmp_path)
+
+    with pytest.raises(ProfileValidationError, match="either 'text' or 'icon'"):
+        manager.create_icon(icon="mdi:volume-high", text="Vol")
+
+
+def test_create_icon_legacy_text_only_still_works(tmp_path: Path) -> None:
+    manager = _icon_manager(tmp_path)
+    result = manager.create_icon(text="Hi", bg_color="#1e40af", text_color="#ffffff")
+
+    assert "icon" not in result
+    assert result["size"] == {"width": 72, "height": 72}
+    assert Path(result["path"]).exists()
+
+
+def test_create_icon_unknown_name_suggests_alternatives(tmp_path: Path) -> None:
+    manager = _icon_manager(tmp_path)
+
+    with pytest.raises(ValueError) as excinfo:
+        manager.create_icon(icon="mdi:cpuuu")
+
+    msg = str(excinfo.value)
+    assert "not found" in msg
+    # Fuzzy match should point toward a real cpu icon.
+    assert "cpu" in msg.lower()
+
+
+def test_create_icon_resolves_alias_to_canonical_name(tmp_path: Path) -> None:
+    # 'computer' is a known alias that resolves to a canonical MDI name; verify it
+    # both renders and that the canonical name is reported back to the caller.
+    manager = _icon_manager(tmp_path)
+    result = manager.create_icon(icon="mdi:computer")
+
+    assert result["icon"].startswith("mdi:")
+    assert result["icon"] != "mdi:computer"
+
+
+def test_create_icon_rejects_empty_spec(tmp_path: Path) -> None:
+    manager = _icon_manager(tmp_path)
+
+    with pytest.raises(ProfileValidationError, match="requires"):
+        manager.create_icon()
+
+
+def test_create_icon_rejects_out_of_range_scale(tmp_path: Path) -> None:
+    manager = _icon_manager(tmp_path)
+
+    with pytest.raises(ProfileValidationError, match="icon_scale"):
+        manager.create_icon(icon="mdi:cpu", icon_scale=1.5)
