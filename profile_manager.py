@@ -461,10 +461,14 @@ class ProfileManager:
                     "to apply the changes."
                 )
             app_stop_report = stop_stream_deck_app()
-            if not app_stop_report.get("stopped", False) or is_stream_deck_app_running():
+            stop_failed = not app_stop_report.get("stopped", False)
+            still_running = is_stream_deck_app_running()
+            if stop_failed or still_running:
+                reason = app_stop_report.get("reason", "")
+                detail = f" Reason: {reason}." if reason else ""
                 raise StreamDeckAppRunningError(
-                    "The Elgato Stream Deck app could not be stopped. Aborting page "
-                    "write because the running app may overwrite these edits on quit."
+                    f"The Elgato Stream Deck app could not be stopped.{detail} Aborting "
+                    "page write because the running app may overwrite these edits on quit."
                 )
 
         profile_dir, profile_manifest = self._resolve_profile(
