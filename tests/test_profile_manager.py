@@ -380,6 +380,226 @@ def test_read_page_requires_locator(sample_profiles_v3: Path, tmp_path: Path) ->
         manager.read_page(profile_name="Default Profile", directory_id="DOES-NOT-EXIST")
 
 
+@pytest.fixture
+def sample_profiles_plus_xl(tmp_path: Path) -> Path:
+    """Profile shaped like a Stream Deck + XL: Keypad 8x4 + Encoder 6x1 on the same page."""
+
+    profiles_dir = tmp_path / "ProfilesV3"
+    profile_dir = profiles_dir / "PLUSXL.sdProfile"
+    page_uuid = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+    profile_manifest = {
+        "AppIdentifier": "*",
+        "Device": {"Model": "20GBX9901", "UUID": "@(1)[4057/198/AD4MA610100UAO]"},
+        "Name": "Plus XL",
+        "Pages": {
+            "Current": page_uuid,
+            "Default": page_uuid,
+            "Pages": [page_uuid],
+        },
+        "Version": "3.0",
+    }
+    dial_action = {
+        "ActionID": "dial-volume",
+        "LinkedTitle": True,
+        "Name": "Volume",
+        "Plugin": {"Name": "Wave Link", "UUID": "com.elgato.wave-link", "Version": "1.0"},
+        "Settings": {"channelId": "mic"},
+        "State": 0,
+        "States": [{"Title": "Mic"}, {}],
+        "UUID": "com.elgato.wave-link.wavecontrol",
+    }
+    key_action = {
+        "ActionID": "action-open",
+        "LinkedTitle": False,
+        "Name": "Open",
+        "Plugin": {
+            "Name": "Open",
+            "UUID": "com.elgato.streamdeck.system.open",
+            "Version": "1.0",
+        },
+        "Settings": {"path": '"/tmp/example.sh"'},
+        "State": 0,
+        "States": [{"Title": "Run"}],
+        "UUID": "com.elgato.streamdeck.system.open",
+    }
+    page_manifest = {
+        "Controllers": [
+            {"Type": "Keypad", "Actions": {"0,0": key_action}},
+            {"Type": "Encoder", "Actions": {"2,0": dial_action}},
+        ],
+        "Icon": "",
+        "Name": "Plus XL Page",
+    }
+
+    _write_json(profile_dir / "manifest.json", profile_manifest)
+    _write_json(
+        profile_dir / "Profiles" / page_uuid.upper() / "manifest.json",
+        page_manifest,
+    )
+    return profiles_dir
+
+
+def test_read_page_returns_both_controllers(sample_profiles_plus_xl: Path, tmp_path: Path) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    page = manager.read_page(profile_name="Plus XL", page_index=0)
+
+    assert page["layout"] == {"columns": 8, "rows": 4}
+    assert page["layouts"] == {
+        "keypad": {"columns": 8, "rows": 4},
+        "encoder": {"columns": 6, "rows": 1},
+    }
+    controllers = {button["controller"] for button in page["buttons"]}
+    assert controllers == {"keypad", "encoder"}
+
+    dial = next(button for button in page["buttons"] if button["controller"] == "encoder")
+    assert dial["position"] == "2,0"
+    assert dial["key"] == 2
+    assert dial["plugin_uuid"] == "com.elgato.wave-link"
+
+
+def test_write_page_preserves_encoder_when_updating_keypad(
+    sample_profiles_plus_xl: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    manager.write_page(
+        profile_name="Plus XL",
+        page_index=0,
+        buttons=[
+            {
+                "key": 1,
+                "title": "Hello",
+                "path": str(tmp_path / "hello.sh"),
+            }
+        ],
+    )
+
+    page = manager.read_page(profile_name="Plus XL", page_index=0)
+    encoder_buttons = [b for b in page["buttons"] if b["controller"] == "encoder"]
+    assert len(encoder_buttons) == 1
+    assert encoder_buttons[0]["plugin_uuid"] == "com.elgato.wave-link"
+
+    keypad_buttons = [b for b in page["buttons"] if b["controller"] == "keypad"]
+    assert {b["position"] for b in keypad_buttons} == {"1,0"}
+    assert keypad_buttons[0]["title"] == "Hello"
+
+
+def test_write_page_targets_encoder_controller(
+    sample_profiles_plus_xl: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    manager.write_page(
+        profile_name="Plus XL",
+        page_index=0,
+        buttons=[
+            {
+                "controller": "dial",
+                "key": 0,
+                "action_type": "next_page",
+                "title": "Next",
+            }
+        ],
+        clear_existing=False,
+    )
+
+    page = manager.read_page(profile_name="Plus XL", page_index=0)
+    encoder_positions = {b["position"] for b in page["buttons"] if b["controller"] == "encoder"}
+    assert encoder_positions == {"0,0", "2,0"}
+
+    keypad_positions = {b["position"] for b in page["buttons"] if b["controller"] == "keypad"}
+    assert keypad_positions == {"0,0"}
+
+
+def test_write_page_rejects_encoder_on_keypad_only_device(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    with pytest.raises(ProfileValidationError, match="Encoder"):
+        manager.write_page(
+            profile_name="Default Profile",
+            directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            buttons=[
+                {
+                    "controller": "encoder",
+                    "key": 0,
+                    "action_type": "next_page",
+                }
+            ],
+        )
+
+
+def test_write_page_rejects_unknown_controller(
+    sample_profiles_plus_xl: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    with pytest.raises(ProfileValidationError, match="Unknown controller"):
+        manager.write_page(
+            profile_name="Plus XL",
+            page_index=0,
+            buttons=[{"controller": "mystery", "key": 0, "action_type": "next_page"}],
+        )
+
+
+def test_write_page_clear_existing_with_empty_buttons_clears_keypad(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    """Regression: clear_existing=True with an empty button list must clear the Keypad."""
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    # Pre-populate a button so there is something to clear.
+    manager.write_page(
+        profile_name="Default Profile",
+        directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+        buttons=[{"key": 0, "title": "Before", "action_type": "next_page"}],
+        clear_existing=True,
+    )
+    page = manager.read_page(
+        profile_name="Default Profile", directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+    )
+    assert len(page["buttons"]) == 1
+
+    # Now clear with no buttons — the page should have no buttons afterwards.
+    manager.write_page(
+        profile_name="Default Profile",
+        directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+        buttons=[],
+        clear_existing=True,
+    )
+    page = manager.read_page(
+        profile_name="Default Profile", directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+    )
+    assert page["buttons"] == []
+
+
 def test_write_page_refuses_while_app_running(sample_profiles_v3: Path, tmp_path: Path) -> None:
     manager = ProfileManager(
         profiles_dir=sample_profiles_v3,
