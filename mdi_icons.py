@@ -5,8 +5,8 @@ from __future__ import annotations
 import difflib
 import json
 from functools import lru_cache
-from importlib.resources import as_file, files
-from pathlib import Path
+from importlib.resources import files
+from importlib.resources.abc import Traversable
 from typing import Any
 
 _PACKAGE = "streamdeck_assets"
@@ -60,14 +60,15 @@ def _searchable_names() -> list[str]:
     return list(_index().keys())
 
 
-def font_path() -> Path:
-    """Return a filesystem path to the bundled MDI TTF.
+def font_path() -> Traversable:
+    """Return a Traversable reference to the bundled MDI TTF.
 
-    Works both from a source checkout and from an installed wheel by materializing
-    the resource to a real path when the package lives inside a zip.
+    Callers must use ``importlib.resources.as_file(font_path())`` as a context
+    manager to obtain a real filesystem path.  This avoids returning a temporary
+    ``Path`` whose backing file may be deleted once the context manager exits
+    (e.g. when the package is loaded from a zipped wheel).
     """
-    with as_file(files(_PACKAGE).joinpath(_FONT_FILENAME)) as p:
-        return Path(p)
+    return files(_PACKAGE).joinpath(_FONT_FILENAME)
 
 
 def resolve(name: str) -> tuple[str, str]:

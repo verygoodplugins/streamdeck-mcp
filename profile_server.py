@@ -376,11 +376,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         if name == "streamdeck_create_icon":
+            _scale = arguments.get("icon_scale")
             result = manager.create_icon(
                 text=arguments.get("text"),
                 icon=arguments.get("icon"),
                 icon_color=arguments.get("icon_color"),
-                icon_scale=arguments.get("icon_scale", 0.7),
+                icon_scale=0.7 if _scale is None else _scale,
                 bg_color=arguments.get("bg_color", "#000000"),
                 text_color=arguments.get("text_color", "#ffffff"),
                 font_size=arguments.get("font_size", 18),

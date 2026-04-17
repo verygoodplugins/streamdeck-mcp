@@ -697,8 +697,11 @@ class ProfileManager:
 
         if glyph is not None:
             glyph_size = max(8, int(DEFAULT_ICON_SIZE[1] * icon_scale))
+            from importlib.resources import as_file as _as_file
+
             try:
-                glyph_font = ImageFont.truetype(str(_mdi_font_path()), glyph_size)
+                with _as_file(_mdi_font_path()) as font_file:
+                    glyph_font = ImageFont.truetype(str(font_file), glyph_size)
             except OSError as exc:
                 raise ProfileManagerError(
                     f"Could not load bundled MDI font: {exc}"

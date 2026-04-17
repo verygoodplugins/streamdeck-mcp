@@ -65,7 +65,7 @@ uvx --from streamdeck-mcp streamdeck-mcp-usb
 | `streamdeck_read_profiles` | Lists desktop profiles and page directories from the active ProfilesV3 or ProfilesV2 store |
 | `streamdeck_read_page` | Reads a page manifest and returns simplified button details plus the raw manifest |
 | `streamdeck_write_page` | Creates a new page or rewrites an existing page manifest |
-| `streamdeck_create_icon` | Generates a 72x72 PNG icon from a Material Design Icons name (e.g. `mdi:cpu-64-bit`), text, or both. ~7400 MDI icons are bundled offline; unknown names return close-match suggestions |
+| `streamdeck_create_icon` | Generates a 72x72 PNG icon from a Material Design Icons name (e.g. `mdi:cpu-64-bit`) or from text (but not both). ~7400 MDI icons are bundled offline; unknown names return close-match suggestions |
 | `streamdeck_create_action` | Creates an executable shell script in `~/StreamDeckScripts/` and returns an Open action block |
 | `streamdeck_restart_app` | Restarts the macOS Stream Deck desktop app after profile changes |
 

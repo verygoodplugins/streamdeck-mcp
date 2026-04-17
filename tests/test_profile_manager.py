@@ -754,9 +754,26 @@ def test_create_icon_mdi_glyph_only(tmp_path: Path) -> None:
 
     png = Image.open(result["path"])
     assert png.size == (72, 72)
-    # A glyph pixel near center should lean toward icon_color (#00ff88), not bg (#1a1a1a).
-    r, g, b = png.getpixel((36, 36))[:3]
-    assert g > r and g > 100, f"expected greenish center pixel, got {(r, g, b)}"
+    # Avoid asserting on a single center pixel: some glyphs have holes/empty centers
+    # and antialiasing can shift exact pixel values between environments. Instead,
+    # verify the rendered image contains a meaningful number of non-background pixels
+    # that lean toward the requested icon color (#00ff88) rather than the background
+    # color (#1a1a1a).
+    bg_rgb = (0x1A, 0x1A, 0x1A)
+    greenish_pixels = 0
+    for pixel in png.convert("RGBA").getdata():
+        r, g, b, a = pixel
+        if a == 0:
+            continue
+        if (r, g, b) == bg_rgb:
+            continue
+        if g > r and g > b and g > bg_rgb[1] + 40:
+            greenish_pixels += 1
+
+    assert greenish_pixels >= 25, (
+        f"expected rendered glyph to contain greenish non-background pixels, got "
+        f"{greenish_pixels}"
+    )
 
 
 def test_create_icon_rejects_icon_and_text_together(tmp_path: Path) -> None:
