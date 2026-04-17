@@ -45,6 +45,8 @@ async def list_tools() -> list[Tool]:
         "properties": {
             "controller": {
                 "type": "string",
+                "enum": ["keypad", "key", "button", "encoder", "dial"],
+                "default": "keypad",
                 "description": (
                     "Which physical controller this button targets. "
                     "'keypad' (default) addresses the LCD keys; "
@@ -56,8 +58,10 @@ async def list_tools() -> list[Tool]:
             "key": {
                 "type": "integer",
                 "description": (
-                    "Linear button index scoped to the chosen controller (0-based, left-to-right). "
-                    "For encoders this is the dial index."
+                    "Button index scoped to the chosen controller (0-based). "
+                    "For keypad controllers the index is row-major "
+                    "(left-to-right, then top-to-bottom). "
+                    "For encoder/dial controllers it is a simple 0..N-1 dial index."
                 ),
             },
             "position": {

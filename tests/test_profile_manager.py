@@ -549,3 +549,38 @@ def test_write_page_rejects_unknown_controller(
             page_index=0,
             buttons=[{"controller": "mystery", "key": 0, "action_type": "next_page"}],
         )
+
+
+def test_write_page_clear_existing_with_empty_buttons_clears_keypad(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    """Regression: clear_existing=True with an empty button list must clear the Keypad."""
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    # Pre-populate a button so there is something to clear.
+    manager.write_page(
+        profile_name="Default Profile",
+        directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+        buttons=[{"key": 0, "title": "Before", "action_type": "next_page"}],
+        clear_existing=True,
+    )
+    page = manager.read_page(
+        profile_name="Default Profile", directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+    )
+    assert len(page["buttons"]) == 1
+
+    # Now clear with no buttons — the page should have no buttons afterwards.
+    manager.write_page(
+        profile_name="Default Profile",
+        directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+        buttons=[],
+        clear_existing=True,
+    )
+    page = manager.read_page(
+        profile_name="Default Profile", directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+    )
+    assert page["buttons"] == []

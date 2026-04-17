@@ -455,6 +455,12 @@ class ProfileManager:
             controller_type = _normalize_controller(button.get("controller"))
             buttons_by_controller.setdefault(controller_type, []).append(button)
 
+        # When clear_existing is requested but no buttons were supplied, default to
+        # targeting the Keypad controller so that the caller can still clear a page
+        # by writing an empty button list (restores pre-multi-controller behaviour).
+        if clear_existing and not buttons_by_controller:
+            buttons_by_controller[KEYPAD] = []
+
         layouts_out: dict[str, dict[str, int]] = {}
 
         for controller_type, ctl_buttons in buttons_by_controller.items():
