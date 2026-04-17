@@ -382,7 +382,7 @@ def test_read_page_requires_locator(sample_profiles_v3: Path, tmp_path: Path) ->
 
 @pytest.fixture
 def sample_profiles_plus_xl(tmp_path: Path) -> Path:
-    """Profile shaped like a Stream Deck + XL: Keypad 8x4 + Encoder 6x1 on the same page."""
+    """Profile shaped like a Stream Deck + XL: Keypad 9x4 + Encoder 6x1 on the same page."""
 
     profiles_dir = tmp_path / "ProfilesV3"
     profile_dir = profiles_dir / "PLUSXL.sdProfile"
@@ -449,9 +449,9 @@ def test_read_page_returns_both_controllers(sample_profiles_plus_xl: Path, tmp_p
 
     page = manager.read_page(profile_name="Plus XL", page_index=0)
 
-    assert page["layout"] == {"columns": 8, "rows": 4}
+    assert page["layout"] == {"columns": 9, "rows": 4}
     assert page["layouts"] == {
-        "keypad": {"columns": 8, "rows": 4},
+        "keypad": {"columns": 9, "rows": 4},
         "encoder": {"columns": 6, "rows": 1},
     }
     controllers = {button["controller"] for button in page["buttons"]}
