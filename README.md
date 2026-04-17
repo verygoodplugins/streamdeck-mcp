@@ -77,9 +77,20 @@ uvx --from streamdeck-mcp streamdeck-mcp-usb
 - Generated icons are stored in `~/.streamdeck-mcp/generated-icons/`.
 - Generated shell scripts are stored in `~/StreamDeckScripts/`.
 
+## Editing Workflow (Important)
+
+The Elgato desktop app keeps every profile in memory and rewrites the on-disk manifests from that snapshot when it quits, so any edit made while the app is running is wiped the next time it closes. The profile writer enforces a quit → write → relaunch cycle:
+
+1. Ensure the Elgato app is not running, or pass `auto_quit_app: true` to `streamdeck_write_page` to have it quit the app for you (AppleScript first, `killall` fallback).
+2. Make as many `streamdeck_write_page` calls as you need — the app stays quit across them.
+3. Call `streamdeck_restart_app` when you are done. The device re-reads the manifests on launch and your changes appear.
+
+`streamdeck_write_page` raises a `StreamDeckAppRunningError` when the app is running and `auto_quit_app` is not set, so you cannot accidentally write changes that will be silently discarded.
+
+If your Elgato app is installed somewhere other than `/Applications/Elgato Stream Deck.app`, set `STREAMDECK_APP_PATH` to the bundle path.
+
 ## Usage Notes
 
-- After writing profiles, the Elgato desktop app may need a restart to pick up the new manifests.
 - `streamdeck_create_action` is the safest way to build shell-command buttons because it writes a standalone script and returns the native Open action block for it.
 - The profile writer does not require exclusive USB access.
 

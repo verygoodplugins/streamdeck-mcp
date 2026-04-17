@@ -9,7 +9,21 @@ from unittest.mock import patch
 
 import pytest
 
-from profile_manager import PageNotFoundError, ProfileManager, ProfileValidationError
+from profile_manager import (
+    PageNotFoundError,
+    ProfileManager,
+    ProfileManagerError,
+    ProfileValidationError,
+    StreamDeckAppRunningError,
+)
+
+
+@pytest.fixture(autouse=True)
+def _stub_stream_deck_app_not_running():
+    """Default: act as if the Stream Deck app is not running so tests hit the write path."""
+
+    with patch("profile_manager.is_stream_deck_app_running", return_value=False):
+        yield
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -364,3 +378,112 @@ def test_read_page_requires_locator(sample_profiles_v3: Path, tmp_path: Path) ->
 
     with pytest.raises(PageNotFoundError):
         manager.read_page(profile_name="Default Profile", directory_id="DOES-NOT-EXIST")
+
+
+def test_write_page_refuses_while_app_running(sample_profiles_v3: Path, tmp_path: Path) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    with patch("profile_manager.is_stream_deck_app_running", return_value=True):
+        with pytest.raises(StreamDeckAppRunningError, match="running"):
+            manager.write_page(
+                profile_name="Default Profile",
+                directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+                buttons=[{"key": 0, "title": "x", "action_type": "next_page"}],
+            )
+
+
+def test_write_page_auto_quit_app_stops_then_writes(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    stop_report = {"stopped": True, "graceful": ["Stream Deck"], "forced": []}
+
+    with (
+        patch("profile_manager.is_stream_deck_app_running", return_value=True),
+        patch("profile_manager.stop_stream_deck_app", return_value=stop_report) as stop_mock,
+    ):
+        result = manager.write_page(
+            profile_name="Default Profile",
+            directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            buttons=[{"key": 0, "title": "x", "action_type": "next_page"}],
+            auto_quit_app=True,
+        )
+
+    stop_mock.assert_called_once()
+    assert result["app_quit"] == stop_report
+    page = manager.read_page(
+        profile_name="Default Profile",
+        directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+    )
+    assert page["buttons"][0]["title"] == "x"
+
+
+def test_write_page_records_no_quit_when_app_not_running(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    # autouse fixture already pins is_stream_deck_app_running to False
+    result = manager.write_page(
+        profile_name="Default Profile",
+        directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+        buttons=[{"key": 0, "title": "x", "action_type": "next_page"}],
+    )
+    assert result["app_quit"] is None
+
+
+def test_restart_app_launches_by_explicit_path(sample_profiles_v3: Path, tmp_path: Path) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    fake_app = tmp_path / "Fake Stream Deck.app"
+    fake_app.mkdir()
+    open_call = {"args": None}
+
+    def _fake_run(cmd, **kwargs):
+        open_call["args"] = cmd
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with (
+        patch("profile_manager.sys.platform", "darwin"),
+        patch.dict("os.environ", {"STREAMDECK_APP_PATH": str(fake_app)}),
+        patch("profile_manager.stop_stream_deck_app", return_value={"stopped": True}),
+        patch("profile_manager.subprocess.run", side_effect=_fake_run),
+    ):
+        result = manager.restart_app()
+
+    assert open_call["args"] == ["open", str(fake_app)]
+    assert result["app_path"] == str(fake_app)
+    assert result["restarted"] is True
+
+
+def test_restart_app_errors_when_app_missing(sample_profiles_v3: Path, tmp_path: Path) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    missing_app = tmp_path / "nope.app"
+
+    with (
+        patch("profile_manager.sys.platform", "darwin"),
+        patch.dict("os.environ", {"STREAMDECK_APP_PATH": str(missing_app)}),
+        patch("profile_manager.stop_stream_deck_app", return_value={"stopped": True}),
+    ):
+        with pytest.raises(ProfileManagerError, match="not found"):
+            manager.restart_app()
