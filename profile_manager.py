@@ -63,10 +63,20 @@ DEFAULT_PAGE_MANIFEST = {
 }
 
 MODEL_LAYOUTS: dict[str, dict[str, tuple[int, int]]] = {
-    # Stream Deck (Original)
+    # Stream Deck Original (15 keys)
     "20GBA9901": {KEYPAD: (5, 3)},
+    # Stream Deck MK.2 (15 keys)
+    "20GAA9901": {KEYPAD: (5, 3)},
+    # Stream Deck XL (32 keys)
+    "20GAT9902": {KEYPAD: (8, 4)},
+    # Stream Deck XL rev2 (32 keys)
+    "20GBA9902": {KEYPAD: (8, 4)},
     # Stream Deck + XL (36 keys, 6 dials with 1200x100 touchstrip)
     "20GBX9901": {KEYPAD: (9, 4), ENCODER: (6, 1)},
+    # Stream Deck Mini (6 keys)
+    "20GAI9501": {KEYPAD: (3, 2)},
+    # Stream Deck Neo (8 keys + touchscreen)
+    "20GBD9901": {KEYPAD: (4, 2)},
     # Emulator used by the Elgato desktop app
     "UI Stream Deck": {KEYPAD: (4, 2)},
 }
