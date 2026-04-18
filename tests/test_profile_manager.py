@@ -1300,3 +1300,86 @@ def test_create_icons_rejects_empty_list(tmp_path: Path) -> None:
     )
     with pytest.raises(ProfileValidationError):
         manager.create_icons([])
+
+
+def test_coerce_arguments_normalizes_stringified_values() -> None:
+    """MCP clients sometimes stringify typed tool-call arguments in transit
+    (Claude Code's tool-call serialization does this as of April 2026). The
+    server-side coercion must restore booleans, numbers, integers, and JSON
+    arrays from their string forms so downstream handlers see native types."""
+
+    from profile_server import _coerce_arguments
+
+    out = _coerce_arguments(
+        {
+            "page_index": "3",
+            "font_size": "18",
+            "icon_scale": "0.8",
+            "auto_quit_app": "true",
+            "clear_existing": "FALSE",
+            "transparent_bg": "1",
+            "buttons": '[{"key": 0}, {"key": 1}]',
+            "icons": '[{"icon":"mdi:play"}]',
+            "page_name": "Home",  # genuine string — must stay a string
+        },
+        ints=("page_index", "font_size"),
+        nums=("icon_scale",),
+        bools=("auto_quit_app", "clear_existing", "transparent_bg"),
+        arrays=("buttons", "icons"),
+    )
+    assert out["page_index"] == 3
+    assert out["font_size"] == 18
+    assert out["icon_scale"] == 0.8
+    assert out["auto_quit_app"] is True
+    assert out["clear_existing"] is False
+    assert out["transparent_bg"] is True
+    assert out["buttons"] == [{"key": 0}, {"key": 1}]
+    assert out["icons"] == [{"icon": "mdi:play"}]
+    assert out["page_name"] == "Home"
+
+
+def test_coerce_arguments_passes_through_native_types() -> None:
+    """Already-correctly-typed values must round-trip untouched."""
+
+    from profile_server import _coerce_arguments
+
+    out = _coerce_arguments(
+        {
+            "page_index": 3,
+            "icon_scale": 0.8,
+            "auto_quit_app": True,
+            "buttons": [{"key": 0}],
+        },
+        ints=("page_index",),
+        nums=("icon_scale",),
+        bools=("auto_quit_app",),
+        arrays=("buttons",),
+    )
+    assert out["page_index"] == 3
+    assert out["icon_scale"] == 0.8
+    assert out["auto_quit_app"] is True
+    assert out["buttons"] == [{"key": 0}]
+
+
+def test_coerce_arguments_leaves_unparseable_values_alone() -> None:
+    """Invalid strings (not a valid int/float/bool/JSON) stay as-is so the
+    downstream handler's specific error message surfaces to the caller."""
+
+    from profile_server import _coerce_arguments
+
+    out = _coerce_arguments(
+        {
+            "page_index": "not-a-number",
+            "icon_scale": "pi",
+            "auto_quit_app": "maybe",
+            "buttons": "not-json",
+        },
+        ints=("page_index",),
+        nums=("icon_scale",),
+        bools=("auto_quit_app",),
+        arrays=("buttons",),
+    )
+    assert out["page_index"] == "not-a-number"
+    assert out["icon_scale"] == "pi"
+    assert out["auto_quit_app"] == "maybe"
+    assert out["buttons"] == "not-json"
