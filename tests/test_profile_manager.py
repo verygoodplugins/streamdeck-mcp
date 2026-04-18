@@ -1383,3 +1383,49 @@ def test_coerce_arguments_leaves_unparseable_values_alone() -> None:
     assert out["icon_scale"] == "pi"
     assert out["auto_quit_app"] == "maybe"
     assert out["buttons"] == "not-json"
+
+
+def test_coerce_arguments_leaves_empty_string_bool_alone() -> None:
+    """Empty strings pass through unchanged — handlers' own default logic
+    (e.g. arguments.get(key, False)) decides what a blank value means
+    rather than this helper eagerly coercing it to False."""
+
+    from profile_server import _coerce_arguments
+
+    out = _coerce_arguments(
+        {"auto_quit_app": "", "clear_existing": ""},
+        bools=("auto_quit_app", "clear_existing"),
+    )
+    assert out["auto_quit_app"] == ""
+    assert out["clear_existing"] == ""
+
+
+def test_install_skill_marks_overwrote_when_target_exists(tmp_path) -> None:
+    """--force is destructive by design (matches argparse help wording).
+    The install() return must flag when it clobbered an existing tree so
+    callers can surface that in UX."""
+
+    import shutil
+
+    import install_skill
+
+    target_parent = tmp_path / "skills"
+    original_skills_root = install_skill.SKILLS_ROOT
+    install_skill.SKILLS_ROOT = target_parent
+    try:
+        # Pre-populate the target so install() has something to overwrite.
+        target = target_parent / install_skill.SKILL_NAME
+        target.mkdir(parents=True)
+        (target / "local-edit.md").write_text("user's own notes")
+
+        result = install_skill.install(force=True)
+        assert result["installed"] is True
+        assert result["overwrote"] is True
+        assert "local edits" in result["message"].lower() or "gone" in result["message"].lower()
+        # The user's file is gone; the bundled SKILL.md is in its place.
+        assert not (target / "local-edit.md").exists()
+        assert (target / "SKILL.md").exists()
+    finally:
+        install_skill.SKILLS_ROOT = original_skills_root
+        if target_parent.exists():
+            shutil.rmtree(target_parent)

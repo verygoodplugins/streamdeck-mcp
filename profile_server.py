@@ -104,8 +104,11 @@ def _coerce_arguments(
             lowered = v.strip().lower()
             if lowered in ("true", "1", "yes"):
                 out[key] = True
-            elif lowered in ("false", "0", "no", ""):
+            elif lowered in ("false", "0", "no"):
                 out[key] = False
+            # Empty strings intentionally pass through — let the handler's
+            # `arguments.get(key, default)` path apply rather than silently
+            # coerce them to False.
     for key in arrays:
         v = out.get(key)
         if isinstance(v, str):
@@ -588,6 +591,21 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return [TextContent(type="text", text=json.dumps(payload, indent=2))]
 
         if name == "streamdeck_write_page":
+            # If coercion couldn't parse a stringified `buttons` array,
+            # surface a clear error here instead of letting the downstream
+            # handler iterate the string one char at a time.
+            raw_buttons = arguments.get("buttons")
+            if isinstance(raw_buttons, str):
+                return [
+                    TextContent(
+                        type="text",
+                        text=(
+                            "❌ 'buttons' was a string but not a valid JSON "
+                            "array. Pass either a JSON array or a JSON-encoded "
+                            "string of an array."
+                        ),
+                    )
+                ]
             result = manager.write_page(
                 profile_name=arguments.get("profile_name"),
                 profile_id=arguments.get("profile_id"),
