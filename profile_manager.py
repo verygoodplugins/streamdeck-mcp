@@ -336,17 +336,30 @@ def ensure_mcp_plugin_installed(*, force: bool = False) -> dict[str, Any]:
     action whose plugin does not declare encoder support.
 
     Idempotent: returns ``installed=False`` when the plugin directory already
-    exists, unless ``force=True`` is passed.
+    exists at the current bundled version, unless ``force=True`` is passed.
+    Automatically upgrades when the installed manifest version is older than the
+    bundled version so that new action UUIDs (e.g. layout variants) are available.
     """
     from importlib.resources import as_file, files
 
-    from streamdeck_plugin import PLUGIN_DIR_NAME
+    from streamdeck_plugin import PLUGIN_DIR_NAME, PLUGIN_VERSION
 
     plugins_dir = get_plugins_dir()
     dst = plugins_dir / PLUGIN_DIR_NAME
 
     if dst.exists() and not force:
-        return {"installed": False, "reason": "already installed", "path": str(dst)}
+        installed_version: str | None = None
+        try:
+            installed_manifest = dst / "manifest.json"
+            installed_version = json.loads(installed_manifest.read_text(encoding="utf-8")).get(
+                "Version"
+            )
+        except Exception:
+            pass
+
+        if installed_version == PLUGIN_VERSION:
+            return {"installed": False, "reason": "already installed", "path": str(dst)}
+        # Installed version is missing or outdated — fall through to reinstall.
 
     plugins_dir.mkdir(parents=True, exist_ok=True)
     if dst.exists():
@@ -1216,7 +1229,12 @@ class ProfileManager:
     def _build_action_from_fields(
         self, button: dict[str, Any], *, controller_type: str = KEYPAD
     ) -> dict[str, Any]:
-        if button.get("encoder_layout") is not None and any(
+        encoder_layout = button.get("encoder_layout")
+        if encoder_layout is not None and controller_type != ENCODER:
+            raise ProfileValidationError(
+                "encoder_layout is only valid for encoder/dial buttons."
+            )
+        if encoder_layout is not None and any(
             button.get(k) for k in ("path", "action_type", "plugin_uuid", "action_uuid")
         ):
             raise ProfileValidationError(
