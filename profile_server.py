@@ -11,11 +11,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    GetPromptResult,
+    Prompt,
+    PromptArgument,
+    PromptMessage,
+    TextContent,
+    Tool,
+)
 
 from profile_manager import (
     PageNotFoundError,
@@ -35,6 +43,82 @@ logger = logging.getLogger("streamdeck-profile-mcp")
 
 manager = ProfileManager()
 server = Server("streamdeck-profile-mcp")
+
+_SKILL_PATH = (
+    Path(__file__).parent
+    / "streamdeck_assets"
+    / "skill"
+    / "streamdeck-designer"
+    / "SKILL.md"
+)
+
+
+def _scalar_or_string(base_type: str) -> dict[str, Any]:
+    """Schema helper: field accepts either a native JSON value or a string
+    form of it. Works around MCP clients (notably Claude Code's tool-call
+    transport as of April 2026) that serialize non-string tool-call
+    arguments as JSON strings before schema validation runs.
+
+    ``base_type`` is one of 'integer', 'number', 'boolean'. For arrays, use a
+    custom ``oneOf`` that preserves the ``items`` schema for the array branch.
+    """
+
+    return {"oneOf": [{"type": base_type}, {"type": "string"}]}
+
+
+def _coerce_arguments(
+    arguments: dict[str, Any],
+    *,
+    ints: tuple[str, ...] = (),
+    nums: tuple[str, ...] = (),
+    bools: tuple[str, ...] = (),
+    arrays: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Convert stringified tool arguments back to native types.
+
+    MCP clients sometimes stringify typed args in transit (Claude Code does
+    this with booleans, numbers, integers and nested arrays). Schemas here
+    declare ``oneOf [native, string]`` so validation passes either shape;
+    this helper normalizes before the handler runs. Unknown/unconvertible
+    strings are left as-is so the downstream handler's error message wins.
+    """
+
+    out = dict(arguments)
+    for key in ints:
+        v = out.get(key)
+        if isinstance(v, str):
+            try:
+                out[key] = int(v)
+            except ValueError:
+                pass
+    for key in nums:
+        v = out.get(key)
+        if isinstance(v, str):
+            try:
+                out[key] = float(v)
+            except ValueError:
+                pass
+    for key in bools:
+        v = out.get(key)
+        if isinstance(v, str):
+            lowered = v.strip().lower()
+            if lowered in ("true", "1", "yes"):
+                out[key] = True
+            elif lowered in ("false", "0", "no"):
+                out[key] = False
+            # Empty strings intentionally pass through — let the handler's
+            # `arguments.get(key, default)` path apply rather than silently
+            # coerce them to False.
+    for key in arrays:
+        v = out.get(key)
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    out[key] = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return out
 
 
 @server.list_tools()
@@ -200,8 +284,11 @@ async def list_tools() -> list[Tool]:
                         ),
                     },
                     "page_index": {
-                        "type": "integer",
-                        "description": "Zero-based page index from streamdeck_read_profiles.",
+                        **_scalar_or_string("integer"),
+                        "description": (
+                            "Zero-based page index from streamdeck_read_profiles. "
+                            "Accepts int or a string form."
+                        ),
                     },
                     "directory_id": {
                         "type": "string",
@@ -228,45 +315,53 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "profile_name": {"type": "string"},
                     "profile_id": {"type": "string"},
-                    "page_index": {"type": "integer"},
+                    "page_index": {
+                        **_scalar_or_string("integer"),
+                        "description": "Zero-based page index. Accepts int or string form.",
+                    },
                     "directory_id": {"type": "string"},
                     "page_name": {
                         "type": "string",
                         "description": "Optional page name stored in the page manifest.",
                     },
                     "buttons": {
-                        "type": "array",
-                        "items": button_schema,
                         "description": (
-                            "Buttons to write. Use streamdeck_create_action "
-                            "to build Open or script-backed actions."
+                            "Buttons to write. Use streamdeck_create_action to "
+                            "build Open or script-backed actions. Accepts a JSON "
+                            "array or a JSON-encoded string — some MCP clients "
+                            "stringify nested arrays in transit."
                         ),
+                        "oneOf": [
+                            {"type": "array", "items": button_schema},
+                            {"type": "string"},
+                        ],
                     },
                     "clear_existing": {
-                        "type": "boolean",
+                        **_scalar_or_string("boolean"),
                         "description": (
                             "If true, replace the page contents with the "
-                            "provided buttons. Defaults to true."
+                            "provided buttons. Defaults to true. Accepts bool "
+                            "or string form."
                         ),
                     },
                     "create_new": {
-                        "type": "boolean",
+                        **_scalar_or_string("boolean"),
                         "description": "Create a new page instead of updating an existing one.",
                     },
                     "make_current": {
-                        "type": "boolean",
+                        **_scalar_or_string("boolean"),
                         "description": (
                             "When true, make the page the active current page after writing."
                         ),
                     },
                     "auto_quit_app": {
-                        "type": "boolean",
+                        **_scalar_or_string("boolean"),
                         "description": (
                             "If true and the Elgato Stream Deck desktop app is "
                             "running, quit it (graceful AppleScript first, then "
                             "killall) before writing. Required when the app is "
-                            "running or the write will raise an error. Defaults to "
-                            "false so callers must explicitly consent to quitting it."
+                            "running or the write will raise an error. Defaults "
+                            "to false so callers must explicitly consent to quitting it."
                         ),
                     },
                 },
@@ -275,13 +370,18 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="streamdeck_create_icon",
             description=(
-                "Generate a 72x72 PNG icon. Supply 'icon' (a Material Design Icons "
-                "name such as 'mdi:cpu-64-bit', 'mdi:volume-high', 'mdi:github') OR "
-                "'text' for a centered text icon — not both. For labels on icon "
-                "buttons, set the button's 'title' field on streamdeck_write_page "
-                "instead of baking text here (Elgato overlays titles on images). "
-                "~7400 MDI icons are bundled and resolved offline; unknown names "
-                "return close-match suggestions. Returns the PNG filesystem path."
+                "Generate one or many PNG icons. Button icons are 72x72 px; "
+                "touchstrip segment icons are 200x100 px (use shape='touchstrip'). "
+                "For a single icon: pass 'icon' (a Material Design Icons name like "
+                "'mdi:cpu-64-bit') OR 'text' (mutually exclusive with 'icon' — "
+                "titles go on streamdeck_write_page's 'title' field since Elgato "
+                "overlays them on images). For a full deck (often 30+ icons): pass "
+                "'icons' as a list of spec dicts to generate them all in one call "
+                "and avoid the round-trip timeouts serial calls hit. ~7400 MDI icons "
+                "bundled offline; unknown names return close-match suggestions. "
+                "Returns either a single {path, size, ...} dict or {\"icons\": [...]} "
+                "when 'icons' is used (each list element is a per-icon result or an "
+                "{\"error\"} entry for that spec)."
             ),
             inputSchema={
                 "type": "object",
@@ -302,7 +402,7 @@ async def list_tools() -> list[Tool]:
                         ),
                     },
                     "icon_scale": {
-                        "type": "number",
+                        **_scalar_or_string("number"),
                         "description": (
                             "Fraction of the canvas the glyph bounding box fills "
                             "(0.1-1.0). Defaults to 1.0 — edge-to-edge, matching how "
@@ -322,7 +422,7 @@ async def list_tools() -> list[Tool]:
                         ),
                     },
                     "transparent_bg": {
-                        "type": "boolean",
+                        **_scalar_or_string("boolean"),
                         "description": (
                             "Generate an RGBA PNG with a transparent canvas instead of "
                             "filling with bg_color. Use this for dial Icons that overlay a "
@@ -340,8 +440,47 @@ async def list_tools() -> list[Tool]:
                     },
                     "bg_color": {"type": "string"},
                     "text_color": {"type": "string"},
-                    "font_size": {"type": "integer"},
+                    "font_size": _scalar_or_string("integer"),
                     "filename": {"type": "string"},
+                    "icons": {
+                        "description": (
+                            "Batch generation: a list of icon spec objects, each "
+                            "carrying the same fields as a single-icon call "
+                            "(icon/text/icon_color/bg_color/icon_scale/shape/"
+                            "transparent_bg/text_color/font_size/filename). When "
+                            "this field is present, all other single-icon fields "
+                            "at the top level are ignored and the response shape "
+                            "becomes {\"icons\": [per-spec result]}. Use this for "
+                            "30+ icon decks to avoid per-call round-trip cost. "
+                            "Accepts either a JSON array or a JSON-encoded string "
+                            "containing an array — some MCP clients stringify "
+                            "nested arrays in transit."
+                        ),
+                        "oneOf": [
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "icon": {"type": "string"},
+                                        "text": {"type": "string"},
+                                        "icon_color": {"type": "string"},
+                                        "icon_scale": {"type": "number"},
+                                        "bg_color": {"type": "string"},
+                                        "text_color": {"type": "string"},
+                                        "font_size": {"type": "integer"},
+                                        "filename": {"type": "string"},
+                                        "shape": {
+                                            "type": "string",
+                                            "enum": ["button", "touchstrip"],
+                                        },
+                                        "transparent_bg": {"type": "boolean"},
+                                    },
+                                },
+                            },
+                            {"type": "string"},
+                        ],
+                    },
                 },
             },
         ),
@@ -402,7 +541,7 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "force": {
-                        "type": "boolean",
+                        **_scalar_or_string("boolean"),
                         "description": (
                             "Reinstall the plugin even if it already exists. Useful after "
                             "upgrading streamdeck-mcp."
@@ -417,6 +556,26 @@ async def list_tools() -> list[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle profile writer tool calls."""
+
+    # Normalize stringified args from MCP clients that serialize non-string
+    # tool-call parameters as JSON strings in transit. Schemas declare
+    # oneOf [native, string] so validation passes either shape; this brings
+    # the values back to the types the handlers expect.
+    arguments = _coerce_arguments(
+        arguments,
+        ints=("page_index", "font_size", "state", "key"),
+        nums=("icon_scale",),
+        bools=(
+            "clear_existing",
+            "create_new",
+            "make_current",
+            "auto_quit_app",
+            "transparent_bg",
+            "force",
+            "show_title",
+        ),
+        arrays=("buttons", "icons"),
+    )
 
     try:
         if name == "streamdeck_read_profiles":
@@ -433,6 +592,21 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return [TextContent(type="text", text=json.dumps(payload, indent=2))]
 
         if name == "streamdeck_write_page":
+            # If coercion couldn't parse a stringified `buttons` array,
+            # surface a clear error here instead of letting the downstream
+            # handler iterate the string one char at a time.
+            raw_buttons = arguments.get("buttons")
+            if isinstance(raw_buttons, str):
+                return [
+                    TextContent(
+                        type="text",
+                        text=(
+                            "❌ 'buttons' was a string but not a valid JSON "
+                            "array. Pass either a JSON array or a JSON-encoded "
+                            "string of an array."
+                        ),
+                    )
+                ]
             result = manager.write_page(
                 profile_name=arguments.get("profile_name"),
                 profile_id=arguments.get("profile_id"),
@@ -448,6 +622,32 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         if name == "streamdeck_create_icon":
+            batch = arguments.get("icons")
+            if isinstance(batch, str):
+                # Some MCP clients stringify nested arrays in transit
+                # (observed with Claude Code's tool-call serialization).
+                # Parse on the server so callers can pass either shape.
+                try:
+                    batch = json.loads(batch)
+                except json.JSONDecodeError as exc:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=(
+                                "❌ 'icons' was a string but not valid JSON: "
+                                f"{exc}. Pass either a JSON array or a "
+                                "JSON-encoded string."
+                            ),
+                        )
+                    ]
+            if batch is not None:
+                icons_result = manager.create_icons(batch)
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps({"icons": icons_result}, indent=2),
+                    )
+                ]
             _scale = arguments.get("icon_scale")
             result = manager.create_icon(
                 text=arguments.get("text"),
@@ -494,6 +694,86 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     except Exception as exc:  # pragma: no cover
         logger.exception("Unexpected error in %s", name)
         return [TextContent(type="text", text=f"❌ Unexpected error: {exc}")]
+
+
+@server.list_prompts()
+async def list_prompts() -> list[Prompt]:
+    """List MCP prompts. The design_streamdeck_deck prompt mirrors the bundled
+    streamdeck-designer skill for MCP clients that don't load Claude Code skills
+    (Claude Desktop, Cursor, ChatGPT-with-MCP, etc.).
+    """
+
+    return [
+        Prompt(
+            name="design_streamdeck_deck",
+            description=(
+                "Prime Claude with the streamdeck-designer authoring vocabulary: "
+                "hardware inventory, palette/typography planning, integration discovery, "
+                "icon generation, dial layouts, and guardrails. Invoke before authoring "
+                "a themed or integrated Stream Deck layout — especially on clients that "
+                "don't auto-load the bundled Claude Code skill. Optional 'intent' arg "
+                "appends the user's specific ask."
+            ),
+            arguments=[
+                PromptArgument(
+                    name="intent",
+                    description=(
+                        "Optional one-line description of what the user wants "
+                        "(e.g. 'hello-kitty Twitch deck with Hue light controls')."
+                    ),
+                    required=False,
+                ),
+            ],
+        ),
+    ]
+
+
+def _load_skill_body() -> str:
+    """Return the streamdeck-designer SKILL.md body (frontmatter stripped)."""
+
+    try:
+        raw = _SKILL_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return (
+            "# Stream Deck Designer\n\n"
+            "The bundled streamdeck-designer skill was not found at "
+            f"{_SKILL_PATH}. Reinstall streamdeck-mcp or check package data.\n"
+        )
+
+    if raw.startswith("---"):
+        parts = raw.split("---", 2)
+        if len(parts) >= 3:
+            return parts[2].lstrip()
+    return raw
+
+
+@server.get_prompt()
+async def get_prompt(name: str, arguments: dict[str, str] | None) -> GetPromptResult:
+    """Return the design_streamdeck_deck priming message."""
+
+    if name != "design_streamdeck_deck":
+        raise ValueError(f"Unknown prompt: {name}")
+
+    body = _load_skill_body()
+    intent = (arguments or {}).get("intent")
+
+    message_text = body
+    if intent:
+        message_text = (
+            f"{body}\n\n---\n\n"
+            f"User intent for this authoring session: {intent}\n\n"
+            "Apply the guidance above. Start by calling streamdeck_read_profiles."
+        )
+
+    return GetPromptResult(
+        description="Stream Deck authoring vocabulary + the user's intent.",
+        messages=[
+            PromptMessage(
+                role="user",
+                content=TextContent(type="text", text=message_text),
+            ),
+        ],
+    )
 
 
 async def main() -> None:

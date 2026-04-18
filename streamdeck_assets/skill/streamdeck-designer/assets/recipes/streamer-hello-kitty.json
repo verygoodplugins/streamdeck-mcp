@@ -1,0 +1,148 @@
+{
+  "_recipe_name": "Streamer (Hello Kitty theme)",
+  "_description": "Full-strip kawaii streaming deck for Stream Deck + XL. Uses OBS for scene/mic/camera, Hue for room lighting, browser links for dashboards. Encoders reserved for the most-used continuous controls; keypad rows grouped by concern.",
+  "_hardware_target": "Stream Deck + XL (20GBX9901)",
+  "_theme": {
+    "palette": {
+      "primary": "#ff8faa",
+      "pale": "#ffe0f0",
+      "white": "#ffffff",
+      "near_black": "#1a1a1a",
+      "accent_gold": "#ffd700"
+    },
+    "strategy": "A (theme-on-neutral): pink/gold icons on pale-pink or near-black backgrounds",
+    "icon_scale": {
+      "keypad": 0.8,
+      "encoder_icon": 1.0,
+      "touchstrip_bg": 0.7
+    }
+  },
+  "_integrations": ["obs-cli", "hue-rest-api", "twitch-cli", "browser"],
+  "_env_required": ["HUE_BRIDGE_IP", "HUE_API_KEY", "TWITCH_CHANNEL"],
+
+  "encoders": [
+    {
+      "key": 0,
+      "purpose": "Master system volume",
+      "title": "Volume",
+      "icon": "mdi:volume-high",
+      "icon_color": "#ff8faa",
+      "transparent_bg": true,
+      "trigger_description": { "Rotate": "System volume", "Push": "Mute toggle" },
+      "encoder_layout": null,
+      "action_note": "Phase 1: press-only, no live rotation. Bake discrete presets as keypad buttons if needed."
+    },
+    {
+      "key": 1,
+      "purpose": "Mic volume (OBS)",
+      "title": "Mic",
+      "icon": "mdi:microphone",
+      "icon_color": "#ff8faa",
+      "transparent_bg": true,
+      "trigger_description": { "Rotate": "Mic gain", "Push": "Mute toggle" },
+      "action_note": "obs-cli audio toggle \"Mic/Aux\""
+    },
+    {
+      "key": 2,
+      "purpose": "Room brightness (Hue scene)",
+      "title": "Lights",
+      "icon": "mdi:lightbulb-on",
+      "icon_color": "#ffd700",
+      "transparent_bg": true,
+      "trigger_description": { "Rotate": "Brightness", "Push": "Toggle off/on" }
+    },
+    {
+      "key": 3,
+      "purpose": "Chat scroll",
+      "title": "Chat",
+      "icon": "mdi:chat",
+      "icon_color": "#ff8faa",
+      "transparent_bg": true
+    },
+    {
+      "key": 4,
+      "purpose": "Alert volume (OBS audio source)",
+      "title": "Alerts",
+      "icon": "mdi:heart",
+      "icon_color": "#ff8faa",
+      "transparent_bg": true
+    },
+    {
+      "key": 5,
+      "purpose": "Master display brightness (macOS system)",
+      "title": "Bright",
+      "icon": "mdi:brightness-6",
+      "icon_color": "#ffd700",
+      "transparent_bg": true
+    }
+  ],
+
+  "touchstrip_background": {
+    "purpose": "Unified pink gradient across all six segments. Use default .dial UUID for show-through.",
+    "generation": "Generate a 1200x100 PNG externally or use streamdeck_create_icon(shape='touchstrip', bg_color='#ff8faa') as a starting point. For full-strip show-through, set it on the first encoder's strip_background_path.",
+    "color_stops": ["#ff8faa", "#ffe0f0", "#ff8faa"]
+  },
+
+  "keypad_rows": [
+    {
+      "row": 0,
+      "purpose": "Scene switches + go-live",
+      "buttons": [
+        { "key": 0, "title": "Start", "icon": "mdi:play-circle", "action": "obs-cli scene current \"Starting Soon\"", "bg": "#ffe0f0" },
+        { "key": 1, "title": "Chat", "icon": "mdi:chat", "action": "obs-cli scene current \"Just Chatting\"", "bg": "#ffe0f0" },
+        { "key": 2, "title": "Game", "icon": "mdi:gamepad-variant", "action": "obs-cli scene current \"Gameplay\"", "bg": "#ffe0f0" },
+        { "key": 3, "title": "BRB", "icon": "mdi:coffee", "action": "obs-cli scene current \"BRB\"", "bg": "#ffe0f0" },
+        { "key": 4, "title": "End", "icon": "mdi:flag-checkered", "action": "obs-cli scene current \"Ending\"", "bg": "#ffe0f0" },
+        { "key": 5, "title": "Go Live", "icon": "mdi:broadcast", "icon_color": "#ffffff", "bg": "#ff8faa", "action": "obs-cli stream start && obs-cli record start" },
+        { "key": 6, "title": "Welcome", "icon": "mdi:heart", "action": "twitch chat send-message --from-user yourbot --to-channel \"$TWITCH_CHANNEL\" --message \"Welcome to the stream!\"" },
+        { "key": 7, "title": "Lurk", "icon": "mdi:eye-off", "action": "twitch chat send-message ..." },
+        { "key": 8, "title": "Schedule", "icon": "mdi:calendar", "action": "twitch chat send-message --message \"Check my schedule: ...\"" }
+      ]
+    },
+    {
+      "row": 1,
+      "purpose": "Mic / camera / sources / Hue scenes",
+      "buttons": [
+        { "key": 9, "title": "Mic", "icon": "mdi:microphone", "action": "obs-cli audio toggle \"Mic/Aux\"" },
+        { "key": 10, "title": "Cam", "icon": "mdi:camera", "action": "obs-cli audio toggle \"Camera\"" },
+        { "key": 11, "title": "Game", "icon": "mdi:monitor-screenshot", "action": "obs-cli source toggle \"Game Capture\"" },
+        { "key": 12, "title": "Browser", "icon": "mdi:web", "action": "obs-cli source toggle \"Browser Source\"" },
+        { "key": 13, "title": "Alerts", "icon": "mdi:bell", "action": "obs-cli source toggle \"Alerts\"" },
+        { "key": 14, "title": "Chill", "icon": "mdi:palette", "action": "curl -s \"http://$HUE_BRIDGE_IP/api/$HUE_API_KEY/groups/1/action\" -X PUT -d '{\"scene\": \"CHILL_SCENE_ID\"}'" },
+        { "key": 15, "title": "Focus", "icon": "mdi:palette", "action": "curl ... FOCUS_SCENE_ID" },
+        { "key": 16, "title": "Stream", "icon": "mdi:palette", "action": "curl ... STREAM_SCENE_ID" },
+        { "key": 17, "title": "Break", "icon": "mdi:palette", "action": "curl ... BREAK_SCENE_ID" }
+      ]
+    },
+    {
+      "row": 2,
+      "purpose": "Sound effects + overlay toggles",
+      "buttons": [
+        { "key": 18, "title": "Applause", "icon": "mdi:hand-clap", "action": "afplay /path/to/sfx/applause.wav" },
+        { "key": 19, "title": "Laugh", "icon": "mdi:emoticon-happy", "action": "afplay /path/to/sfx/laugh.wav" },
+        { "key": 20, "title": "Win", "icon": "mdi:trophy", "action": "afplay /path/to/sfx/win.wav" },
+        { "key": 21, "title": "Fail", "icon": "mdi:emoticon-sad", "action": "afplay /path/to/sfx/fail.wav" },
+        { "key": 22, "title": "Drum", "icon": "mdi:drum", "action": "afplay /path/to/sfx/drumroll.wav" },
+        { "key": 23, "title": "Ding", "icon": "mdi:bell-ring", "action": "afplay /path/to/sfx/ding.wav" },
+        { "key": 24, "title": "Overlay", "icon": "mdi:layers", "action": "obs-cli source toggle \"Stream Overlay\"" },
+        { "key": 25, "title": "Starting", "icon": "mdi:clock-start", "action": "obs-cli scene current \"Starting Soon\"" },
+        { "key": 26, "title": "Panic", "icon": "mdi:alert", "icon_color": "#ffffff", "bg": "#1a1a1a", "action": "obs-cli scene current \"BRB\" && obs-cli audio toggle \"Mic/Aux\"" }
+      ]
+    },
+    {
+      "row": 3,
+      "purpose": "Utilities / dashboards / nav",
+      "buttons": [
+        { "key": 27, "title": "Twitch", "icon": "mdi:twitch", "action": "open \"https://dashboard.twitch.tv/u/$TWITCH_CHANNEL/stream-manager\"" },
+        { "key": 28, "title": "OBS", "icon": "mdi:video-switch", "action": "open -a \"OBS\"" },
+        { "key": 29, "title": "Discord", "icon": "mdi:discord", "action": "open -a \"Discord\"" },
+        { "key": 30, "title": "All Mute", "icon": "mdi:volume-off", "action": "obs-cli audio toggle \"Mic/Aux\" && obs-cli audio toggle \"Desktop Audio\"" },
+        { "key": 31, "title": "Reset", "icon": "mdi:restart", "action": "obs-cli scene current \"Starting Soon\" && obs-cli source show \"Stream Overlay\"" },
+        { "key": 32, "title": "Prev", "action_type": "previous_page" },
+        { "key": 33, "title": "Next", "action_type": "next_page" },
+        { "key": 34, "title": "Coding", "action": "open -a \"Stream Deck\" && ..." },
+        { "key": 35, "title": "Dev", "action": "profile-switch (build manually)" }
+      ]
+    }
+  ]
+}

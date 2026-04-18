@@ -79,8 +79,31 @@ MODEL_LAYOUTS: dict[str, dict[str, tuple[int, int]]] = {
     "20GAI9501": {KEYPAD: (3, 2)},
     # Stream Deck Neo (8 keys + touchscreen)
     "20GBD9901": {KEYPAD: (4, 2)},
-    # Emulator used by the Elgato desktop app
+    # Emulator used by the Elgato desktop app ("UI" in older builds, "AI" in recent)
     "UI Stream Deck": {KEYPAD: (4, 2)},
+    "AI Stream Deck": {KEYPAD: (4, 2)},
+    # NOTE: the original Stream Deck + (8 keys + 4 dials + 800x100 touchstrip,
+    # released 2022) has not yet been observed in a profile manifest and its
+    # Elgato-app product ID is unknown. When a profile reports an unknown Model
+    # with encoders present, _resolve_layout falls back to the 5x3 default — add
+    # that model's ID here (with ENCODER: (4, 1) and KEYPAD: (4, 2)) when seen.
+}
+
+# Human-readable names for the model IDs the Elgato desktop app writes to
+# profile manifests. Surfaced in streamdeck_read_profiles so LLMs don't have to
+# cross-reference product IDs against docs (and mis-translate them under the
+# pressure of a complex authoring session). Source: Elgato app profile
+# manifests observed in the wild; kept in sync with MODEL_LAYOUTS above.
+MODEL_NAMES: dict[str, str] = {
+    "20GBA9901": "Stream Deck Original",
+    "20GAA9901": "Stream Deck MK.2",
+    "20GAT9902": "Stream Deck XL",
+    "20GBA9902": "Stream Deck XL rev2",
+    "20GBX9901": "Stream Deck + XL",
+    "20GAI9501": "Stream Deck Mini",
+    "20GBD9901": "Stream Deck Neo",
+    "UI Stream Deck": "UI Stream Deck (emulator)",
+    "AI Stream Deck": "AI Stream Deck (virtual deck / Elgato app companion)",
 }
 
 # The Elgato Stream Deck desktop app caches every profile in memory and rewrites the
@@ -474,6 +497,12 @@ class ProfileManager:
         for profile_dir in sorted(self.profiles_dir.glob("*.sdProfile")):
             manifest = _load_json(profile_dir / "manifest.json")
             page_refs = self._page_refs(profile_dir, manifest)
+            device = dict(manifest.get("Device") or {})
+            model_id = device.get("Model")
+            if model_id and "ModelName" not in device:
+                device["ModelName"] = MODEL_NAMES.get(
+                    model_id, f"Unknown Stream Deck model ({model_id})"
+                )
             profiles.append(
                 {
                     "profile_id": profile_dir.stem,
@@ -482,7 +511,7 @@ class ProfileManager:
                     "profiles_dir": str(self.profiles_dir),
                     "profiles_root": self.profiles_dir.name,
                     "profile_path": str(profile_dir),
-                    "device": manifest.get("Device", {}),
+                    "device": device,
                     "current_page_uuid": manifest.get("Pages", {}).get("Current"),
                     "default_page_uuid": manifest.get("Pages", {}).get("Default"),
                     "page_count": len(page_refs),
@@ -856,6 +885,80 @@ class ProfileManager:
         if canonical_icon_name:
             result["icon"] = f"mdi:{canonical_icon_name}"
         return result
+
+    def create_icons(
+        self,
+        specs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Generate multiple icons in one call.
+
+        Each element of ``specs`` is a dict of keyword arguments passed through to
+        ``create_icon``. Returns a list of result dicts in the same order. If one
+        icon fails its validation, the returned entry carries an ``"error"`` key
+        with the message so a single bad spec doesn't abort the rest of the batch.
+
+        This exists so LLMs authoring full decks (32 keypad icons + 6 dial icons
+        is normal) don't round-trip one MCP call per icon and time out.
+        """
+
+        if not isinstance(specs, list) or not specs:
+            raise ProfileValidationError(
+                "create_icons requires a non-empty list of icon specs."
+            )
+
+        results: list[dict[str, Any]] = []
+        for index, spec in enumerate(specs):
+            if not isinstance(spec, dict):
+                results.append({"error": f"specs[{index}] must be a dict."})
+                continue
+
+            # Coerce per-spec string values that may arrive stringified from
+            # LLM output or transport coercion.
+            scale_raw = spec.get("icon_scale")
+            if isinstance(scale_raw, str):
+                try:
+                    scale_raw = float(scale_raw)
+                except ValueError:
+                    pass  # let downstream raise a clear TypeError/ValueError
+
+            font_size_raw = spec.get("font_size", 18)
+            if isinstance(font_size_raw, str):
+                try:
+                    font_size_raw = int(font_size_raw)
+                except ValueError:
+                    pass
+
+            tb_raw = spec.get("transparent_bg", False)
+            if isinstance(tb_raw, str):
+                lowered = tb_raw.strip().lower()
+                if lowered in ("true", "1", "yes"):
+                    tb_raw = True
+                elif lowered in ("false", "0", "no"):
+                    tb_raw = False
+                # Unrecognized strings (including "") are left as-is;
+                # bool() below will treat non-empty strings as True.
+            transparent_bg = bool(tb_raw)
+
+            kwargs = {
+                "text": spec.get("text"),
+                "icon": spec.get("icon"),
+                "icon_color": spec.get("icon_color"),
+                "icon_scale": 1.0 if scale_raw is None else scale_raw,
+                "bg_color": spec.get("bg_color", DEFAULT_BG_COLOR),
+                "text_color": spec.get("text_color", DEFAULT_TEXT_COLOR),
+                "font_size": font_size_raw,
+                "filename": spec.get("filename"),
+                "shape": spec.get("shape", "button"),
+                "transparent_bg": transparent_bg,
+            }
+            try:
+                results.append(self.create_icon(**kwargs))
+            except (ProfileValidationError, ProfileManagerError, ValueError, TypeError) as exc:
+                # ValueError covers mdi_icons.IconNotFoundError (a ValueError
+                # subclass). TypeError covers bad numeric types after coercion.
+                # Record the failure so one bad spec doesn't abort the batch.
+                results.append({"error": str(exc), "spec_index": index})
+        return results
 
     def create_action(
         self,

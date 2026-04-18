@@ -1196,3 +1196,236 @@ def test_write_page_auto_installs_mcp_plugin_for_layout_variant(
     )
     assert result["mcp_plugin_install"]["installed"] is True
     assert (plugins_dir / PLUGIN_DIR_NAME / "manifest.json").exists()
+
+
+def test_list_profiles_enriches_device_with_model_name(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    """streamdeck_read_profiles must surface a human-readable model name alongside
+    the raw Elgato product ID. Without this, LLMs authoring decks can mis-translate
+    product codes and pick the wrong layout — real-world failure mode from Steve's
+    first trial run (20GBX9901 confused with the non-XL Plus)."""
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    profiles = manager.list_profiles()
+
+    assert len(profiles) == 1
+    device = profiles[0]["device"]
+    # Fixture uses 20GBA9901 (Stream Deck Original)
+    assert device["Model"] == "20GBA9901"
+    assert device["ModelName"] == "Stream Deck Original"
+
+
+def test_list_profiles_marks_unknown_models_clearly(tmp_path: Path) -> None:
+    """Unknown product IDs (e.g. a future Stream Deck SKU or an ID we haven't
+    mapped yet) must produce an explicit 'Unknown Stream Deck model (<id>)'
+    string — never silently fall through to an empty name or raw ID."""
+
+    profiles_dir = tmp_path / "ProfilesV3"
+    profile_dir = profiles_dir / "UNKNOWN.sdProfile"
+    _write_json(
+        profile_dir / "manifest.json",
+        {
+            "Device": {"Model": "20GZ9999", "UUID": "@(1)"},
+            "Name": "Mystery",
+            "Pages": {"Current": None, "Default": None, "Pages": []},
+            "Version": "3.0",
+        },
+    )
+    manager = ProfileManager(
+        profiles_dir=profiles_dir,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    profiles = manager.list_profiles()
+    assert profiles[0]["device"]["ModelName"] == "Unknown Stream Deck model (20GZ9999)"
+
+
+def test_create_icons_generates_batch_in_one_call(tmp_path: Path) -> None:
+    """Batch icon creation — the primary optimization behind this round of
+    changes. 32-key decks authored with one icon per MCP call timed out in
+    real use; batching closes that gap."""
+
+    manager = ProfileManager(
+        profiles_dir=tmp_path / "profiles",
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    results = manager.create_icons(
+        [
+            {"icon": "mdi:volume-high", "icon_color": "#00ff88", "filename": "b1"},
+            {"icon": "mdi:microphone", "icon_color": "#ff4444", "filename": "b2"},
+            {"text": "GO", "bg_color": "#000000", "text_color": "#ff006e", "filename": "b3"},
+        ]
+    )
+    assert len(results) == 3
+    for r in results:
+        assert "error" not in r
+        assert Path(r["path"]).exists()
+
+
+def test_create_icons_captures_per_spec_errors(tmp_path: Path) -> None:
+    """A single bad spec must not abort the whole batch — record the error in
+    its slot and keep generating the rest. Matches the real-world pattern
+    where one MDI name has a typo out of 30 and the author wants the other 29
+    to land without a retry."""
+
+    manager = ProfileManager(
+        profiles_dir=tmp_path / "profiles",
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    results = manager.create_icons(
+        [
+            {"icon": "mdi:volume-high", "filename": "good_1"},
+            {"icon": "mdi:nonexistent-icon-name-xyz", "filename": "bad"},
+            {"icon": "mdi:microphone", "filename": "good_2"},
+        ]
+    )
+    assert "error" not in results[0]
+    assert "error" in results[1]
+    assert results[1]["spec_index"] == 1
+    assert "error" not in results[2]
+
+
+def test_create_icons_rejects_empty_list(tmp_path: Path) -> None:
+    manager = ProfileManager(
+        profiles_dir=tmp_path / "profiles",
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    with pytest.raises(ProfileValidationError):
+        manager.create_icons([])
+
+
+def test_coerce_arguments_normalizes_stringified_values() -> None:
+    """MCP clients sometimes stringify typed tool-call arguments in transit
+    (Claude Code's tool-call serialization does this as of April 2026). The
+    server-side coercion must restore booleans, numbers, integers, and JSON
+    arrays from their string forms so downstream handlers see native types."""
+
+    from profile_server import _coerce_arguments
+
+    out = _coerce_arguments(
+        {
+            "page_index": "3",
+            "font_size": "18",
+            "icon_scale": "0.8",
+            "auto_quit_app": "true",
+            "clear_existing": "FALSE",
+            "transparent_bg": "1",
+            "buttons": '[{"key": 0}, {"key": 1}]',
+            "icons": '[{"icon":"mdi:play"}]',
+            "page_name": "Home",  # genuine string — must stay a string
+        },
+        ints=("page_index", "font_size"),
+        nums=("icon_scale",),
+        bools=("auto_quit_app", "clear_existing", "transparent_bg"),
+        arrays=("buttons", "icons"),
+    )
+    assert out["page_index"] == 3
+    assert out["font_size"] == 18
+    assert out["icon_scale"] == 0.8
+    assert out["auto_quit_app"] is True
+    assert out["clear_existing"] is False
+    assert out["transparent_bg"] is True
+    assert out["buttons"] == [{"key": 0}, {"key": 1}]
+    assert out["icons"] == [{"icon": "mdi:play"}]
+    assert out["page_name"] == "Home"
+
+
+def test_coerce_arguments_passes_through_native_types() -> None:
+    """Already-correctly-typed values must round-trip untouched."""
+
+    from profile_server import _coerce_arguments
+
+    out = _coerce_arguments(
+        {
+            "page_index": 3,
+            "icon_scale": 0.8,
+            "auto_quit_app": True,
+            "buttons": [{"key": 0}],
+        },
+        ints=("page_index",),
+        nums=("icon_scale",),
+        bools=("auto_quit_app",),
+        arrays=("buttons",),
+    )
+    assert out["page_index"] == 3
+    assert out["icon_scale"] == 0.8
+    assert out["auto_quit_app"] is True
+    assert out["buttons"] == [{"key": 0}]
+
+
+def test_coerce_arguments_leaves_unparseable_values_alone() -> None:
+    """Invalid strings (not a valid int/float/bool/JSON) stay as-is so the
+    downstream handler's specific error message surfaces to the caller."""
+
+    from profile_server import _coerce_arguments
+
+    out = _coerce_arguments(
+        {
+            "page_index": "not-a-number",
+            "icon_scale": "pi",
+            "auto_quit_app": "maybe",
+            "buttons": "not-json",
+        },
+        ints=("page_index",),
+        nums=("icon_scale",),
+        bools=("auto_quit_app",),
+        arrays=("buttons",),
+    )
+    assert out["page_index"] == "not-a-number"
+    assert out["icon_scale"] == "pi"
+    assert out["auto_quit_app"] == "maybe"
+    assert out["buttons"] == "not-json"
+
+
+def test_coerce_arguments_leaves_empty_string_bool_alone() -> None:
+    """Empty strings pass through unchanged — handlers' own default logic
+    (e.g. arguments.get(key, False)) decides what a blank value means
+    rather than this helper eagerly coercing it to False."""
+
+    from profile_server import _coerce_arguments
+
+    out = _coerce_arguments(
+        {"auto_quit_app": "", "clear_existing": ""},
+        bools=("auto_quit_app", "clear_existing"),
+    )
+    assert out["auto_quit_app"] == ""
+    assert out["clear_existing"] == ""
+
+
+def test_install_skill_marks_overwrote_when_target_exists(tmp_path) -> None:
+    """--force is destructive by design (matches argparse help wording).
+    The install() return must flag when it clobbered an existing tree so
+    callers can surface that in UX."""
+
+    import shutil
+
+    import install_skill
+
+    target_parent = tmp_path / "skills"
+    original_skills_root = install_skill.SKILLS_ROOT
+    install_skill.SKILLS_ROOT = target_parent
+    try:
+        # Pre-populate the target so install() has something to overwrite.
+        target = target_parent / install_skill.SKILL_NAME
+        target.mkdir(parents=True)
+        (target / "local-edit.md").write_text("user's own notes")
+
+        result = install_skill.install(force=True)
+        assert result["installed"] is True
+        assert result["overwrote"] is True
+        assert "local edits" in result["message"].lower() or "gone" in result["message"].lower()
+        # The user's file is gone; the bundled SKILL.md is in its place.
+        assert not (target / "local-edit.md").exists()
+        assert (target / "SKILL.md").exists()
+    finally:
+        install_skill.SKILLS_ROOT = original_skills_root
+        if target_parent.exists():
+            shutil.rmtree(target_parent)

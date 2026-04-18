@@ -1,0 +1,102 @@
+{
+  "_recipe_name": "Developer Deck (Nordic theme)",
+  "_description": "Per-repo XL deck with run/build/test/lint, GitHub shortcuts, Docker controls, editor launchers. Column-grouped by concern; bottom row is meta navigation.",
+  "_hardware_target": "Stream Deck XL (8×4)",
+  "_theme": {
+    "palette": {
+      "polar_night": "#2e3440",
+      "frost": "#88c0d0",
+      "aurora_green": "#a3be8c",
+      "snow_white": "#d8dee9",
+      "aurora_red": "#bf616a"
+    },
+    "strategy": "A: frost/green icons on polar-night; red for destructive/alert",
+    "icon_scale": { "keypad": 0.8 }
+  },
+  "_integrations": ["shell", "browser", "github-cli", "docker"],
+  "_env_required": [],
+  "_adapt_hint": "Before authoring, inspect the user's package.json / Makefile / pyproject.toml and pick the user's actual scripts — don't ship generic 'npm run dev' for a Python repo.",
+
+  "columns": [
+    {
+      "column": 0,
+      "purpose": "Build / run / test / lint",
+      "buttons": [
+        { "key": 0, "title": "Run", "icon": "mdi:play-circle", "icon_color": "#88c0d0", "bg": "#2e3440", "action": "cd {{REPO}} && npm run dev" },
+        { "key": 8, "title": "Build", "icon": "mdi:package-variant", "icon_color": "#88c0d0", "bg": "#2e3440", "action": "cd {{REPO}} && npm run build" },
+        { "key": 16, "title": "Test", "icon": "mdi:test-tube", "icon_color": "#a3be8c", "bg": "#2e3440", "action": "cd {{REPO}} && npm test" },
+        { "key": 24, "title": "Lint", "icon": "mdi:check-circle", "icon_color": "#a3be8c", "bg": "#2e3440", "action": "cd {{REPO}} && npm run lint" }
+      ]
+    },
+    {
+      "column": 1,
+      "purpose": "GitHub / PRs / CI / issues",
+      "buttons": [
+        { "key": 1, "title": "PRs", "icon": "mdi:github", "icon_color": "#88c0d0", "bg": "#2e3440", "action": "open \"https://github.com/{{OWNER}}/{{REPO}}/pulls\"" },
+        { "key": 9, "title": "Branch", "icon": "mdi:source-branch", "icon_color": "#88c0d0", "bg": "#2e3440", "action": "cd {{REPO}} && git branch --show-current | xargs -I{} open \"https://github.com/{{OWNER}}/{{REPO}}/tree/{}\"" },
+        { "key": 17, "title": "CI", "icon": "mdi:robot", "icon_color": "#a3be8c", "bg": "#2e3440", "action": "open \"https://github.com/{{OWNER}}/{{REPO}}/actions\"" },
+        { "key": 25, "title": "Issues", "icon": "mdi:bug", "icon_color": "#bf616a", "bg": "#2e3440", "action": "open \"https://github.com/{{OWNER}}/{{REPO}}/issues\"" }
+      ]
+    },
+    {
+      "column": 2,
+      "purpose": "Docker / environment",
+      "buttons": [
+        { "key": 2, "title": "Up", "icon": "mdi:docker", "icon_color": "#88c0d0", "bg": "#2e3440", "action": "cd {{REPO}} && docker compose up -d" },
+        { "key": 10, "title": "Down", "icon": "mdi:docker", "icon_color": "#bf616a", "bg": "#2e3440", "action": "cd {{REPO}} && docker compose down" },
+        { "key": 18, "title": "Logs", "icon": "mdi:file-document", "icon_color": "#88c0d0", "bg": "#2e3440", "action": "open -a \"Terminal\" && osascript -e 'tell application \"Terminal\" to do script \"cd {{REPO}} && docker compose logs -f\"'" },
+        { "key": 26, "title": "Restart", "icon": "mdi:restart", "icon_color": "#a3be8c", "bg": "#2e3440", "action": "cd {{REPO}} && docker compose restart" }
+      ]
+    },
+    {
+      "column": 3,
+      "purpose": "Repo-specific scripts (populate from package.json / Makefile)",
+      "buttons": [
+        { "key": 3, "title": "{{SCRIPT_A}}", "icon": "mdi:console", "action": "cd {{REPO}} && {{CMD_A}}" },
+        { "key": 11, "title": "{{SCRIPT_B}}", "icon": "mdi:console", "action": "cd {{REPO}} && {{CMD_B}}" },
+        { "key": 19, "title": "{{SCRIPT_C}}", "icon": "mdi:console", "action": "cd {{REPO}} && {{CMD_C}}" },
+        { "key": 27, "title": "{{SCRIPT_D}}", "icon": "mdi:console", "action": "cd {{REPO}} && {{CMD_D}}" }
+      ]
+    },
+    {
+      "column": 4,
+      "purpose": "Git operations (deliberate — pressing 'Push' should be meaningful)",
+      "buttons": [
+        { "key": 4, "title": "Status", "icon": "mdi:format-list-bulleted", "action": "open -a Terminal && osascript -e 'tell application \"Terminal\" to do script \"cd {{REPO}} && git status\"'" },
+        { "key": 12, "title": "Pull", "icon": "mdi:cloud-download", "icon_color": "#88c0d0", "bg": "#2e3440", "action": "cd {{REPO}} && git pull" },
+        { "key": 20, "title": "Push", "icon": "mdi:cloud-upload", "icon_color": "#a3be8c", "bg": "#2e3440", "action": "cd {{REPO}} && git push" },
+        { "key": 28, "title": "Log", "icon": "mdi:history", "action": "open -a Terminal && osascript ..." }
+      ]
+    },
+    {
+      "column": 5,
+      "purpose": "Project-specific dashboards",
+      "buttons": [
+        { "key": 5, "title": "Vercel", "icon": "mdi:triangle", "action": "open \"https://vercel.com/{{TEAM}}/{{PROJECT}}\"" },
+        { "key": 13, "title": "Sentry", "icon": "mdi:alert-circle", "action": "open \"https://sentry.io/organizations/{{ORG}}/issues/\"" },
+        { "key": 21, "title": "Linear", "icon": "mdi:calendar-check", "action": "open \"https://linear.app/{{TEAM}}\"" },
+        { "key": 29, "title": "Docs", "icon": "mdi:book-open-variant", "action": "open \"https://{{DOCS_URL}}\"" }
+      ]
+    },
+    {
+      "column": 6,
+      "purpose": "Utilities",
+      "buttons": [
+        { "key": 6, "title": "Clean", "icon": "mdi:broom", "icon_color": "#bf616a", "action": "cd {{REPO}} && rm -rf node_modules dist" },
+        { "key": 14, "title": "Reinstall", "icon": "mdi:download", "action": "cd {{REPO}} && npm ci" },
+        { "key": 22, "title": "Format", "icon": "mdi:format-indent-increase", "action": "cd {{REPO}} && npm run format" },
+        { "key": 30, "title": "Open .env", "icon": "mdi:key-variant", "action": "code {{REPO}}/.env" }
+      ]
+    },
+    {
+      "column": 7,
+      "purpose": "Editor / terminal / navigation",
+      "buttons": [
+        { "key": 7, "title": "Code", "icon": "mdi:microsoft-visual-studio-code", "action": "code {{REPO}}" },
+        { "key": 15, "title": "Term", "icon": "mdi:console", "action": "open -a \"Terminal\" {{REPO}}" },
+        { "key": 23, "title": "Config", "icon": "mdi:cog", "action": "code {{REPO}}/package.json" },
+        { "key": 31, "title": "Switch", "action_type": "next_page", "icon": "mdi:arrow-right" }
+      ]
+    }
+  ]
+}
