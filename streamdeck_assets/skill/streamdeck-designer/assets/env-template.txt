@@ -1,0 +1,36 @@
+# ~/StreamDeckScripts/.env — credential store for Stream Deck actions
+#
+# This file is sourced by every generated shell script. Fill in the values
+# for the services you actually use; leave the rest commented out.
+#
+# Never commit this file. If you're tracking ~/StreamDeckScripts under git,
+# add `.env` to its .gitignore.
+#
+# File permissions: `chmod 600 ~/StreamDeckScripts/.env` so only your user
+# can read it.
+
+# ——— Philips Hue ———————————————————————————————————————————————
+# HUE_BRIDGE_IP=192.168.1.5
+# HUE_API_KEY=replace-with-your-long-token
+
+# ——— OBS (obs-websocket v5) ————————————————————————————————————
+# OBS_HOST=127.0.0.1
+# OBS_PORT=4455
+# OBS_PASSWORD=your-websocket-password
+
+# ——— Home Assistant ————————————————————————————————————————————
+# HA_URL=http://homeassistant.local:8123
+# HA_TOKEN=your-long-lived-access-token
+
+# ——— Spotify (via spotipy) ———————————————————————————————————————
+# SPOTIFY_CLIENT_ID=
+# SPOTIFY_CLIENT_SECRET=
+# SPOTIFY_REDIRECT_URI=http://localhost:8888/callback
+
+# ——— Twitch ———————————————————————————————————————————————————
+# TWITCH_OAUTH=oauth:your-token
+# TWITCH_CHANNEL=yourchannel
+
+# ——— Custom (add anything the user's integrations need) ————————
+# MY_SERVICE_URL=
+# MY_SERVICE_TOKEN=

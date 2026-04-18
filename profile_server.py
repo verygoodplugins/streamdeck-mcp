@@ -11,11 +11,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import (
+    GetPromptResult,
+    Prompt,
+    PromptArgument,
+    PromptMessage,
+    TextContent,
+    Tool,
+)
 
 from profile_manager import (
     PageNotFoundError,
@@ -35,6 +43,14 @@ logger = logging.getLogger("streamdeck-profile-mcp")
 
 manager = ProfileManager()
 server = Server("streamdeck-profile-mcp")
+
+_SKILL_PATH = (
+    Path(__file__).parent
+    / "streamdeck_assets"
+    / "skill"
+    / "streamdeck-designer"
+    / "SKILL.md"
+)
 
 
 @server.list_tools()
@@ -494,6 +510,86 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     except Exception as exc:  # pragma: no cover
         logger.exception("Unexpected error in %s", name)
         return [TextContent(type="text", text=f"❌ Unexpected error: {exc}")]
+
+
+@server.list_prompts()
+async def list_prompts() -> list[Prompt]:
+    """List MCP prompts. The design_streamdeck_deck prompt mirrors the bundled
+    streamdeck-designer skill for MCP clients that don't load Claude Code skills
+    (Claude Desktop, Cursor, ChatGPT-with-MCP, etc.).
+    """
+
+    return [
+        Prompt(
+            name="design_streamdeck_deck",
+            description=(
+                "Prime Claude with the streamdeck-designer authoring vocabulary: "
+                "hardware inventory, palette/typography planning, integration discovery, "
+                "icon generation, dial layouts, and guardrails. Invoke before authoring "
+                "a themed or integrated Stream Deck layout — especially on clients that "
+                "don't auto-load the bundled Claude Code skill. Optional 'intent' arg "
+                "appends the user's specific ask."
+            ),
+            arguments=[
+                PromptArgument(
+                    name="intent",
+                    description=(
+                        "Optional one-line description of what the user wants "
+                        "(e.g. 'hello-kitty Twitch deck with Hue light controls')."
+                    ),
+                    required=False,
+                ),
+            ],
+        ),
+    ]
+
+
+def _load_skill_body() -> str:
+    """Return the streamdeck-designer SKILL.md body (frontmatter stripped)."""
+
+    try:
+        raw = _SKILL_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return (
+            "# Stream Deck Designer\n\n"
+            "The bundled streamdeck-designer skill was not found at "
+            f"{_SKILL_PATH}. Reinstall streamdeck-mcp or check package data.\n"
+        )
+
+    if raw.startswith("---"):
+        parts = raw.split("---", 2)
+        if len(parts) >= 3:
+            return parts[2].lstrip()
+    return raw
+
+
+@server.get_prompt()
+async def get_prompt(name: str, arguments: dict[str, str] | None) -> GetPromptResult:
+    """Return the design_streamdeck_deck priming message."""
+
+    if name != "design_streamdeck_deck":
+        raise ValueError(f"Unknown prompt: {name}")
+
+    body = _load_skill_body()
+    intent = (arguments or {}).get("intent")
+
+    message_text = body
+    if intent:
+        message_text = (
+            f"{body}\n\n---\n\n"
+            f"User intent for this authoring session: {intent}\n\n"
+            "Apply the guidance above. Start by calling streamdeck_read_profiles."
+        )
+
+    return GetPromptResult(
+        description="Stream Deck authoring vocabulary + the user's intent.",
+        messages=[
+            PromptMessage(
+                role="user",
+                content=TextContent(type="text", text=message_text),
+            ),
+        ],
+    )
 
 
 async def main() -> None:

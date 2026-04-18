@@ -1,0 +1,55 @@
+{
+  "_recipe_name": "Music Player (Retrowave)",
+  "_description": "15-key playback deck for the Original / MK.2. Three rows: playback, volume+playlist shortcuts, discovery/utilities. Uses Spotify via spotipy wrappers; substitute Apple Music via osascript if the user prefers.",
+  "_hardware_target": "Stream Deck Original / MK.2 (5×3)",
+  "_theme": {
+    "palette": {
+      "neon_pink": "#ff006e",
+      "cyan": "#00f5ff",
+      "purple": "#7209b7",
+      "midnight": "#1a1a2e",
+      "sun_yellow": "#ffb703"
+    },
+    "strategy": "B: neon/cyan glyphs on midnight backgrounds. No whites.",
+    "icon_scale": { "keypad": 0.85 }
+  },
+  "_integrations": ["spotipy", "osascript"],
+  "_env_required": ["SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "SPOTIFY_REDIRECT_URI"],
+  "_adapt_hint": "User's actual playlist URIs replace placeholders. Spotify OAuth refresh token must be cached via spotipy before buttons fire — run the one-time auth flow first.",
+
+  "rows": [
+    {
+      "row": 0,
+      "purpose": "Playback transport",
+      "buttons": [
+        { "key": 0, "title": "Back", "icon": "mdi:skip-previous", "icon_color": "#00f5ff", "bg": "#1a1a2e", "action": "python3 -c \"import spotipy; from spotipy.oauth2 import SpotifyOAuth; spotipy.Spotify(auth_manager=SpotifyOAuth(scope='user-modify-playback-state')).previous_track()\"" },
+        { "key": 1, "title": "Play", "icon": "mdi:play", "icon_color": "#ff006e", "bg": "#1a1a2e", "action": "python3 -c \"... sp.start_playback()\"" },
+        { "key": 2, "title": "Pause", "icon": "mdi:pause", "icon_color": "#ff006e", "bg": "#1a1a2e", "action": "python3 -c \"... sp.pause_playback()\"" },
+        { "key": 3, "title": "Next", "icon": "mdi:skip-next", "icon_color": "#00f5ff", "bg": "#1a1a2e", "action": "python3 -c \"... sp.next_track()\"" },
+        { "key": 4, "title": "Shuffle", "icon": "mdi:shuffle-variant", "icon_color": "#ffb703", "bg": "#1a1a2e", "action": "python3 -c \"... sp.shuffle(True)\"" }
+      ]
+    },
+    {
+      "row": 1,
+      "purpose": "Volume + playlist moods",
+      "buttons": [
+        { "key": 5, "title": "Vol -", "icon": "mdi:volume-low", "icon_color": "#00f5ff", "bg": "#1a1a2e", "action": "python3 -c \"... sp.volume(max(0, sp.current_playback()['device']['volume_percent'] - 10))\"" },
+        { "key": 6, "title": "Vol +", "icon": "mdi:volume-high", "icon_color": "#00f5ff", "bg": "#1a1a2e", "action": "python3 -c \"... sp.volume(min(100, sp.current_playback()['device']['volume_percent'] + 10))\"" },
+        { "key": 7, "title": "Chill", "icon": "mdi:music-note-eighth", "icon_color": "#ff006e", "bg": "#1a1a2e", "action": "python3 -c \"... sp.start_playback(context_uri='{{PLAYLIST_URI_CHILL}}')\"" },
+        { "key": 8, "title": "Focus", "icon": "mdi:headphones", "icon_color": "#ff006e", "bg": "#1a1a2e", "action": "python3 -c \"... sp.start_playback(context_uri='{{PLAYLIST_URI_FOCUS}}')\"" },
+        { "key": 9, "title": "Retro", "icon": "mdi:cassette", "icon_color": "#ffb703", "bg": "#1a1a2e", "action": "python3 -c \"... sp.start_playback(context_uri='{{PLAYLIST_URI_RETROWAVE}}')\"" }
+      ]
+    },
+    {
+      "row": 2,
+      "purpose": "Discovery + utilities",
+      "buttons": [
+        { "key": 10, "title": "Spotify", "icon": "mdi:spotify", "icon_color": "#00f5ff", "bg": "#1a1a2e", "action": "open -a \"Spotify\"" },
+        { "key": 11, "title": "Save", "icon": "mdi:heart", "icon_color": "#ff006e", "bg": "#1a1a2e", "action": "python3 -c \"... uri = sp.current_playback()['item']['uri']; sp.current_user_saved_tracks_add([uri])\"" },
+        { "key": 12, "title": "Queue", "icon": "mdi:playlist-plus", "icon_color": "#00f5ff", "bg": "#1a1a2e", "action": "python3 -c \"... prompt user (hard in static; consider manual flow)\"" },
+        { "key": 13, "title": "Mute", "icon": "mdi:volume-off", "icon_color": "#bf616a", "bg": "#1a1a2e", "action": "osascript -e 'set volume output muted true'" },
+        { "key": 14, "title": "Unmute", "icon": "mdi:volume-high", "icon_color": "#a3be8c", "bg": "#1a1a2e", "action": "osascript -e 'set volume output muted false'" }
+      ]
+    }
+  ]
+}

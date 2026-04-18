@@ -58,6 +58,41 @@ Or use the packaged legacy entrypoint:
 uvx --from streamdeck-mcp streamdeck-mcp-usb
 ```
 
+## Designing Decks with the `streamdeck-designer` Skill
+
+streamdeck-mcp ships with an **Agent Skill** that teaches Claude how to design, theme, and author complete Stream Deck layouts using the MCP tools below. With the skill loaded, Claude can one-shot an authored deck from a high-level prompt — "give me a hello-kitty-themed Twitch deck with Hue light controls", "build a dev deck for this repo in Nordic colors" — including palette planning, integration discovery, consistent icon generation, and shell-script wiring.
+
+### Install the skill (Claude Code / Claude.ai)
+
+```bash
+# After installing streamdeck-mcp (e.g. via uvx or pip install -e .)
+streamdeck-mcp-install-skill
+# or, without the console script:
+uv run python -m install_skill
+```
+
+The skill is copied to `~/.claude/skills/streamdeck-designer/`. Restart Claude Code (or start a new session) and it auto-loads when your request matches a themed/custom deck design intent.
+
+To upgrade after a `streamdeck-mcp` version bump, rerun with `--force`:
+
+```bash
+streamdeck-mcp-install-skill --force
+```
+
+### Other MCP clients
+
+Clients that don't load Claude Code skills (Claude Desktop, Cursor, ChatGPT-with-MCP, …) get a condensed mirror via the MCP prompt **`design_streamdeck_deck`**. Invoke it before asking for a deck — most clients expose it as a slash command or prompt picker. Pass the user's intent via the `intent` argument if your client supports it.
+
+### What the skill covers
+
+- Hardware inventory — the skill always calls `streamdeck_read_profiles` first, then consults bundled references to match authoring style to the user's model (Original, MK.2, XL, Plus XL, Neo, Mini).
+- Palette + typography planning — 8 theme archetypes (kawaii, retrowave, brutalist, nordic, terminal, nature, minimal, corporate) with ready palettes + per-strategy icon-color guidance.
+- Dials + touchstrip — decision tree for Plus XL encoder layouts (`$X1` / `$A0` / …) with Phase 1 constraints called out (value/indicator slots render empty until the live channel lands).
+- Integration recipes — per-service patterns for Hue, OBS, Spotify, Home Assistant, Twitch, shell, browser. Authoring-time discovery via companion MCPs; credentials stored in `~/StreamDeckScripts/.env`, never baked into scripts.
+- Starter recipes — streamer/hello-kitty (Plus XL), dev/Nordic (XL), music/retrowave (Original) as adaptation shapes.
+
+The skill lives at `streamdeck_assets/skill/streamdeck-designer/` in the repo; the `SKILL.md` body is ≤500 lines and `references/` are loaded on demand.
+
 ## Default Tools
 
 | Tool | What it does |
