@@ -179,6 +179,35 @@ After the write:
 - Use companion MCPs to discover the user's actual scenes/devices — don't guess endpoints.
 - Name actions in `streamdeck_create_action` descriptively (the name becomes the shell script filename — `scene-chill.sh` beats `action1.sh`).
 
+## When you need SDK authority
+
+Elgato's Stream Deck SDK (docs at `https://docs.elgato.com/streamdeck/sdk/`) is the source of truth for anything about deep-link URL grammar, `manifest.json` fields, WebSocket plugin events, touch-strip layouts, or the `streamdeck` CLI. This skill ships a thin primer for the facts used every authoring turn; the rest lives in Context7 or the live docs site. Follow this order.
+
+**1. Primer first for hot paths.** `references/sdk-primer.md` has the deep-link URL grammar, a manifest section cheat sheet (including the `ApplicationsToMonitor` vs "ApplicationMonitoring" pitfall), the full plugin event glossary, and the CLI command table. Read it before round-tripping Context7 for things it already covers.
+
+**2. Context7 for anything the primer doesn't cover.** The Context7 query tool may appear under different namespaces depending on the install — plugin installs expose it as `mcp__plugin_context7_context7__query-docs`; direct MCP installs as `mcp__context7__query-docs`. **Find it by pattern-matching `*context7*query-docs*` against your available-tools list rather than hard-coding a name.**
+
+If the Context7 tools show as deferred (calling them directly errors with `InputValidationError`), load the schemas first with `ToolSearch` using `select:<matched-query-docs-name>,<matched-resolve-library-id-name>`. Without this, your first SDK query will crash.
+
+Then call `query-docs` with:
+- Primary: `libraryId: "/websites/elgato_streamdeck_sdk"` — 874 snippets indexed live from the docs site, benchmark 79.8.
+- Secondary: `libraryId: "/elgatosf/streamdeck"` — the `@elgato/streamdeck` TypeScript SDK package itself, for plugin-authoring code questions.
+
+Pass the user's question verbatim; don't summarize it before the tool sees it.
+
+**3. Fallback — library-ID drift.** If a query against the primary library returns empty or obviously-wrong results, re-run `resolve-library-id` with query `"elgato stream deck sdk"` and use the top-ranked result. The pinned ID above was correct at authoring time but library paths can move.
+
+**4. Fallback — no Context7 at all.** If no `*context7*` tool is available in the session, consult `references/sdk-urls.md`, pick the closest page, and `WebFetch` it.
+
+**5. Red flags — verify, don't emit.** Before writing any SDK-derived fact into code or a user reply, STOP if you catch yourself thinking:
+
+- "I think I know the deep-link URL format" → verify via the primer or Context7.
+- "This event name sounds right (`DialRotate`, `onWillAppear`, …)" → verify.
+- "The manifest probably accepts X" → verify.
+- "`setImage` takes a base64 string, right?" → verify.
+
+All of these mean: do not emit. Look it up first. The primer carries the top sticky facts exactly so you don't round-trip — but fabrication is worse than round-tripping.
+
 ## When the user wants more than static authoring
 
 If they describe behavior like "the dial value updates live as I rotate it," "the button should flash when CI goes red," "I want Claude to render progress as the build runs," or "the button should show what Claude is thinking about" — that's **Phase 2** (live channel, setFeedback wiring, MCP-callback actions). Say so plainly: "That's a live/dynamic behavior; the current MCP handles static authoring. Phase 2 adds the live channel — it's on the roadmap."
@@ -196,3 +225,5 @@ Loaded on demand, not by default. Consult them when:
 - `references/integrations.md` — per-service recipes (Hue, OBS, Spotify, Home Assistant, Twitch, browser, shell).
 - `references/patterns.md` — starter page specs for common deck archetypes (streamer, per-repo dev, music, home-control).
 - `references/troubleshooting.md` — when a write succeeds but the deck doesn't reflect it, icons render wrong, or an encoder icon vanishes after restart.
+- `references/sdk-primer.md` — hot-path SDK facts (deep-link URL grammar, manifest section cheat sheet, WebSocket event glossary, CLI commands). Read first for any SDK-adjacent question.
+- `references/sdk-urls.md` — full index of every `docs.elgato.com/streamdeck/sdk/` and `/cli/` URL. Fallback for `WebFetch` when Context7 is unavailable.
