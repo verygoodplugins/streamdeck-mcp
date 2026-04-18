@@ -77,7 +77,7 @@ uvx --from streamdeck-mcp streamdeck-mcp-usb
 - `streamdeck_write_page` can accept raw native action objects, or use convenience fields like `path`, `action_type`, `plugin_uuid`, and `action_uuid`.
 - Generated icons are stored in `~/.streamdeck-mcp/generated-icons/`.
 - Generated shell scripts are stored in `~/StreamDeckScripts/`.
-- The bundled streamdeck-mcp Stream Deck plugin lives at `~/Library/Application Support/com.elgato.StreamDeck/Plugins/io.github.verygoodplugins.streamdeck-mcp.sdPlugin/` once installed. It's a minimal shell whose only job is to declare encoder support so per-instance `Encoder.Icon` / `Encoder.background` writes survive an Elgato app restart. `streamdeck_write_page` installs it automatically the first time an encoder button needs it.
+- The bundled streamdeck-mcp Stream Deck plugin is installed into the Stream Deck Plugins directory (e.g., `~/Library/Application Support/com.elgato.StreamDeck/Plugins/` on macOS, `%APPDATA%\Elgato\StreamDeck\Plugins\` on Windows) once installed. It's a minimal shell whose only job is to declare encoder support so per-instance `Encoder.Icon` / `Encoder.background` writes survive an Elgato app restart. `streamdeck_write_page` installs it automatically the first time an encoder button needs it.
 
 ## Editing Workflow (Important)
 

@@ -1255,6 +1255,16 @@ class ProfileManager:
                 if isinstance(raw_action, dict):
                     if (raw_action.get("Plugin") or {}).get("UUID") == PLUGIN_UUID:
                         return True
+                elif isinstance(raw_action, str):
+                    # Action may be a JSON-encoded dict — parse and check UUID.
+                    try:
+                        parsed = json.loads(raw_action)
+                        if isinstance(parsed, dict) and (
+                            (parsed.get("Plugin") or {}).get("UUID") == PLUGIN_UUID
+                        ):
+                            return True
+                    except (json.JSONDecodeError, TypeError):
+                        pass
                 elif raw_action is None:
                     # Will be built as an MCP dial action iff no other action spec present.
                     if not any(
@@ -1275,7 +1285,7 @@ class ProfileManager:
         return ensure_mcp_plugin_installed(force=force)
 
     def _build_mcp_dial_action(self, button: dict[str, Any]) -> dict[str, Any]:
-        from streamdeck_plugin import ACTION_UUID, PLUGIN_UUID
+        from streamdeck_plugin import ACTION_UUID, PLUGIN_UUID, PLUGIN_VERSION
 
         return {
             "ActionID": str(uuid.uuid4()),
@@ -1284,7 +1294,7 @@ class ProfileManager:
             "Plugin": {
                 "Name": "streamdeck-mcp",
                 "UUID": PLUGIN_UUID,
-                "Version": "0.1.0",
+                "Version": PLUGIN_VERSION,
             },
             "Settings": copy.deepcopy(button.get("settings", {})),
             "State": 0,

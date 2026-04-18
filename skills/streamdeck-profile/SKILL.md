@@ -84,7 +84,7 @@ These are the source of truth for manifest schemas, image dimensions, and touchs
 | Layout | Semantics |
 |--------|-----------|
 | `$X1` | Title top, icon centered |
-| `$A0` | Title top, full-width image canvas center (used by streamdeck-mcp dial) |
+| `$A0` | Title top, full-width image canvas center |
 | `$A1` | Title top, icon left, text value right |
 | `$B1` | Title top, icon left, text + progress bar right |
 | `$B2` | Title top, icon left, text + gradient progress bar |
@@ -100,4 +100,4 @@ For static per-instance backgrounds/icons, write directly to the page manifest:
 - `Controllers[Encoder].Actions[<pos>].Encoder.background` → per-segment 200×100 background path
 - `Controllers[Encoder].Background` → full 1200×100 strip background path
 
-These fields only survive a profile write when the action's plugin declares `Controllers: ["Encoder"]`. The bundled streamdeck-mcp plugin (`io.github.verygoodplugins.streamdeck-mcp.dial`) declares encoder support with layout `$A0`, so manifest writes of `Encoder.Icon`/`background` stick across quit/relaunch.
+These fields only survive a profile write when the action's plugin declares `Controllers: ["Encoder"]`. The bundled streamdeck-mcp plugin (`io.github.verygoodplugins.streamdeck-mcp.dial`) declares encoder support (no explicit `Encoder.layout` — the Stream Deck app's default encoder layout is used), so manifest writes of `Encoder.Icon`/`background` stick across quit/relaunch.
