@@ -291,13 +291,17 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="streamdeck_create_icon",
             description=(
-                "Generate a 72x72 PNG icon. Supply 'icon' (a Material Design Icons "
-                "name such as 'mdi:cpu-64-bit', 'mdi:volume-high', 'mdi:github') OR "
-                "'text' for a centered text icon — not both. For labels on icon "
-                "buttons, set the button's 'title' field on streamdeck_write_page "
-                "instead of baking text here (Elgato overlays titles on images). "
-                "~7400 MDI icons are bundled and resolved offline; unknown names "
-                "return close-match suggestions. Returns the PNG filesystem path."
+                "Generate one or many 72x72 PNG icons. For a single icon: pass "
+                "'icon' (a Material Design Icons name like 'mdi:cpu-64-bit') OR "
+                "'text' (mutually exclusive with 'icon' — titles go on "
+                "streamdeck_write_page's 'title' field since Elgato overlays them "
+                "on images). For a full deck (often 30+ icons): pass 'icons' as a "
+                "list of spec dicts to generate them all in one call and avoid the "
+                "round-trip timeouts serial calls hit. ~7400 MDI icons bundled "
+                "offline; unknown names return close-match suggestions. Returns "
+                "either a single {path, size, ...} dict or {\"icons\": [...]} when "
+                "'icons' is used (each list element is a per-icon result or an "
+                "{\"error\"} entry for that spec)."
             ),
             inputSchema={
                 "type": "object",
@@ -358,6 +362,37 @@ async def list_tools() -> list[Tool]:
                     "text_color": {"type": "string"},
                     "font_size": {"type": "integer"},
                     "filename": {"type": "string"},
+                    "icons": {
+                        "type": "array",
+                        "description": (
+                            "Batch generation: a list of icon spec objects, each "
+                            "carrying the same fields as a single-icon call "
+                            "(icon/text/icon_color/bg_color/icon_scale/shape/"
+                            "transparent_bg/text_color/font_size/filename). When "
+                            "this field is present, all other single-icon fields "
+                            "at the top level are ignored and the response shape "
+                            "becomes {\"icons\": [per-spec result]}. Use this for "
+                            "30+ icon decks to avoid per-call round-trip cost."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "icon": {"type": "string"},
+                                "text": {"type": "string"},
+                                "icon_color": {"type": "string"},
+                                "icon_scale": {"type": "number"},
+                                "bg_color": {"type": "string"},
+                                "text_color": {"type": "string"},
+                                "font_size": {"type": "integer"},
+                                "filename": {"type": "string"},
+                                "shape": {
+                                    "type": "string",
+                                    "enum": ["button", "touchstrip"],
+                                },
+                                "transparent_bg": {"type": "boolean"},
+                            },
+                        },
+                    },
                 },
             },
         ),
@@ -464,6 +499,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         if name == "streamdeck_create_icon":
+            batch = arguments.get("icons")
+            if batch is not None:
+                icons_result = manager.create_icons(batch)
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps({"icons": icons_result}, indent=2),
+                    )
+                ]
             _scale = arguments.get("icon_scale")
             result = manager.create_icon(
                 text=arguments.get("text"),

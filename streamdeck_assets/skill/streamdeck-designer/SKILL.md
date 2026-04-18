@@ -19,7 +19,9 @@ Resist the urge to start generating icons before the structure is decided. Every
 
 ### 1. Inventory the hardware before anything else
 
-Call `streamdeck_read_profiles` first. This tells you which profiles exist, what model each profile is bound to, and which pages are populated. Never assume a layout — Original (5×3 keys), MK.2 (5×3), XL (8×4), Plus XL (9×4 keys + 6 encoders with a 1200×100 touch strip), Mini (3×2), and Neo (4×2) are all in active use, and the tradeoffs differ. See `references/hardware.md` for per-model guidance.
+Call `streamdeck_read_profiles` first. The response has each profile's `device.Model` (raw Elgato product ID like `20GBX9901`) **and** `device.ModelName` (human-readable, like `"Stream Deck + XL"`). **Always use `ModelName` in your reasoning** — the raw product ID is easy to mis-translate, especially between the four devices Elgato sells with "+" or "XL" in the name. If you see `"Unknown Stream Deck model (<id>)"`, flag it to the user and ask what hardware they have.
+
+Never assume a layout — Original (5×3), MK.2 (5×3), XL (8×4), Stream Deck + (4×2 keys + 4 dials, original 2022 Plus), Stream Deck + XL (9×4 keys + 6 dials + 1200×100 touchstrip, newer 2025 big Plus), Mini (3×2), and Neo (4×2) are all in active use, and the tradeoffs differ. See `references/hardware.md` for per-model guidance and the "+ vs + XL" disambiguation.
 
 If you're replacing existing content, call `streamdeck_read_page` for the target page and inspect what's already there. Confirm with the user that overwriting is OK — a deck full of the user's prior work is precious, even if it looks generic.
 
@@ -77,17 +79,34 @@ curl -s "http://$HUE_BRIDGE_IP/api/$HUE_API_KEY/groups/1/action" \
 
 See `references/integrations.md` for per-service patterns (Hue, OBS, Spotify, Home Assistant, Twitch, shell/terminal, browser URLs).
 
-### 6. Generate icons with consistent parameters
+### 6. Generate icons — batched when the deck is big
 
-For every button that needs an icon, call `streamdeck_create_icon` with:
-- Your planned palette's `icon_color` and `bg_color`.
+**Always batch icon generation for a whole deck into a single `streamdeck_create_icon` call.** The tool accepts an optional `icons` array parameter. A 32-key XL deck authored with 32 serial calls hits round-trip timeouts; the same 32 icons in one batched call complete in a fraction of the time.
+
+Batch call:
+
+```python
+streamdeck_create_icon(icons=[
+    {"icon": "mdi:play-circle",   "icon_color": "#88c0d0", "bg_color": "#2e3440", "filename": "run"},
+    {"icon": "mdi:package-variant","icon_color": "#88c0d0", "bg_color": "#2e3440", "filename": "build"},
+    # ... one spec per button ...
+])
+# returns: {"icons": [{path, size, ...}, {path, size, ...}, ...]}
+```
+
+If one spec fails (e.g. `mdi:cat-face` has no exact match), its slot in the result carries `{"error": "...", "spec_index": N}` and the rest of the batch still succeeds — pick up the fuzzy-match suggestion, fix that one spec, re-batch the failures.
+
+Single-icon calls still work the same way they always did — batch is purely additive.
+
+Icon param conventions:
+- Your planned palette's `icon_color` and `bg_color` on every spec.
 - For keypad keys that will also show a title at the bottom: `icon_scale` around `0.75`–`0.85` (leaves visual room for the title overlay).
 - For encoder dial faces and any icon that fills its canvas edge-to-edge: `icon_scale=1.0` (matches Elgato's own native icon sizing).
 - For icons that will composite over a touchstrip background: `shape="touchstrip"` for the 200×100 segment background, and `transparent_bg=True` on dial icons that overlay it.
 
-**`icon` and `text` are mutually exclusive.** The Stream Deck app draws the button's `title` *over* its image, so if you bake text into the PNG and also set a title, the text doubles up. For labeled icon buttons: pass only `icon` to `streamdeck_create_icon`, then set `title` in the `streamdeck_write_page` button spec.
+**`icon` and `text` are mutually exclusive.** The Stream Deck app draws the button's `title` *over* its image, so if you bake text into the PNG and also set a title, the text doubles up. For labeled icon buttons: pass only `icon` in the spec, then set `title` in the `streamdeck_write_page` button spec.
 
-If an MDI name misses, `streamdeck_create_icon` returns close-match suggestions. Take them — the exact right glyph for a concept is often named something slightly different (e.g. `mdi:cog` vs `mdi:gear`). `references/icons.md` has 30+ categorized exemplars.
+If an MDI name misses, the tool returns close-match suggestions. Take them — the exact right glyph for a concept is often named something slightly different (e.g. `mdi:cog` vs `mdi:gear`). `references/icons.md` has 30+ categorized exemplars.
 
 ### 7. Wire actions with shell scripts
 

@@ -51,6 +51,19 @@ For an encoder, `streamdeck_write_page` accepts:
 
 Fields **must not combine** with `path`/`action_type`/`plugin_uuid`/`action_uuid` — those are for custom actions. The MCP validates this.
 
+## Encoder title color is controlled by the layout, not by `title_color`
+
+Phase 1 gotcha: on keypad buttons, `title_color` on the button spec maps to `TitleColor` in the action state and the Stream Deck app renders the title in that color. On encoders, the touchstrip layout's own `color` attribute on the `title` text item wins — `TitleColor` in the action state is ignored at render time. In practice this means encoder titles come out white (the layout default) regardless of what `title_color` you set on the button spec.
+
+The Elgato spec (touch-strip-layout reference) states that when a Text item's `key` equals `"title"`, the property inspector grants users font customization authority, overriding layout-defined color / font / alignment. Our bundled plugin doesn't ship a property inspector, so users can't override it that way either.
+
+Phase 1 workarounds, if white-on-default-bg isn't acceptable:
+1. Bake the title text into the dial's icon PNG (`text="…"` on `streamdeck_create_icon` with a transparent background sized for the dial face). Accept that you lose Elgato's overlay-title dynamic sizing.
+2. Choose backgrounds that look right behind white text.
+3. Skip titles on encoders entirely (set `show_title: false` on the button spec) and rely on the icon to communicate the dial's purpose.
+
+Phase 2 (plugin JS gains `setFeedback`) can call `setFeedback({title: {value: "...", color: "#..."}})` per-instance, closing this gap. Until then, document the limitation rather than try to paper over it.
+
 ## TriggerDescription — the free win
 
 Each encoder action in the bundled plugin manifest declares an `Encoder.TriggerDescription` block. Stream Deck uses its values to tell the user what rotate/push/touch do when they hover or look at their dial stack. Currently the bundled plugin declares empty trigger descriptions (`"Rotate": ""`, etc.) — the Stream Deck app falls back to generic labels.

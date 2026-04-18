@@ -47,3 +47,5 @@ htmlcov/
 # Local config (user state is stored here, don't track)
 # ~/.streamdeck-mcp/
 /.claude
+streamdeck_assets/skill/*.zip
+streamdeck_assets/skill/*.skill

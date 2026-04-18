@@ -1196,3 +1196,107 @@ def test_write_page_auto_installs_mcp_plugin_for_layout_variant(
     )
     assert result["mcp_plugin_install"]["installed"] is True
     assert (plugins_dir / PLUGIN_DIR_NAME / "manifest.json").exists()
+
+
+def test_list_profiles_enriches_device_with_model_name(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    """streamdeck_read_profiles must surface a human-readable model name alongside
+    the raw Elgato product ID. Without this, LLMs authoring decks can mis-translate
+    product codes and pick the wrong layout — real-world failure mode from Steve's
+    first trial run (20GBX9901 confused with the non-XL Plus)."""
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    profiles = manager.list_profiles()
+
+    assert len(profiles) == 1
+    device = profiles[0]["device"]
+    # Fixture uses 20GBA9901 (Stream Deck Original)
+    assert device["Model"] == "20GBA9901"
+    assert device["ModelName"] == "Stream Deck Original"
+
+
+def test_list_profiles_marks_unknown_models_clearly(tmp_path: Path) -> None:
+    """Unknown product IDs (e.g. a future Stream Deck SKU or an ID we haven't
+    mapped yet) must produce an explicit 'Unknown Stream Deck model (<id>)'
+    string — never silently fall through to an empty name or raw ID."""
+
+    profiles_dir = tmp_path / "ProfilesV3"
+    profile_dir = profiles_dir / "UNKNOWN.sdProfile"
+    _write_json(
+        profile_dir / "manifest.json",
+        {
+            "Device": {"Model": "20GZ9999", "UUID": "@(1)"},
+            "Name": "Mystery",
+            "Pages": {"Current": None, "Default": None, "Pages": []},
+            "Version": "3.0",
+        },
+    )
+    manager = ProfileManager(
+        profiles_dir=profiles_dir,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    profiles = manager.list_profiles()
+    assert profiles[0]["device"]["ModelName"] == "Unknown Stream Deck model (20GZ9999)"
+
+
+def test_create_icons_generates_batch_in_one_call(tmp_path: Path) -> None:
+    """Batch icon creation — the primary optimization behind this round of
+    changes. 32-key decks authored with one icon per MCP call timed out in
+    real use; batching closes that gap."""
+
+    manager = ProfileManager(
+        profiles_dir=tmp_path / "profiles",
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    results = manager.create_icons(
+        [
+            {"icon": "mdi:volume-high", "icon_color": "#00ff88", "filename": "b1"},
+            {"icon": "mdi:microphone", "icon_color": "#ff4444", "filename": "b2"},
+            {"text": "GO", "bg_color": "#000000", "text_color": "#ff006e", "filename": "b3"},
+        ]
+    )
+    assert len(results) == 3
+    for r in results:
+        assert "error" not in r
+        assert Path(r["path"]).exists()
+
+
+def test_create_icons_captures_per_spec_errors(tmp_path: Path) -> None:
+    """A single bad spec must not abort the whole batch — record the error in
+    its slot and keep generating the rest. Matches the real-world pattern
+    where one MDI name has a typo out of 30 and the author wants the other 29
+    to land without a retry."""
+
+    manager = ProfileManager(
+        profiles_dir=tmp_path / "profiles",
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    results = manager.create_icons(
+        [
+            {"icon": "mdi:volume-high", "filename": "good_1"},
+            {"icon": "mdi:nonexistent-icon-name-xyz", "filename": "bad"},
+            {"icon": "mdi:microphone", "filename": "good_2"},
+        ]
+    )
+    assert "error" not in results[0]
+    assert "error" in results[1]
+    assert results[1]["spec_index"] == 1
+    assert "error" not in results[2]
+
+
+def test_create_icons_rejects_empty_list(tmp_path: Path) -> None:
+    manager = ProfileManager(
+        profiles_dir=tmp_path / "profiles",
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    with pytest.raises(ProfileValidationError):
+        manager.create_icons([])
