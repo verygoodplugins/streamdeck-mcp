@@ -1200,6 +1200,10 @@ class ProfileManager:
                 raise ProfileValidationError(
                     "strip_background_path is only valid for encoder/dial buttons."
                 )
+            if button.get("encoder_layout") is not None:
+                raise ProfileValidationError(
+                    "encoder_layout is only valid for encoder/dial buttons."
+                )
             if icon_path:
                 state_data["Image"] = self._copy_icon_to_page(
                     Path(icon_path).expanduser(), page_dir
@@ -1212,6 +1216,13 @@ class ProfileManager:
     def _build_action_from_fields(
         self, button: dict[str, Any], *, controller_type: str = KEYPAD
     ) -> dict[str, Any]:
+        if button.get("encoder_layout") is not None and any(
+            button.get(k) for k in ("path", "action_type", "plugin_uuid", "action_uuid")
+        ):
+            raise ProfileValidationError(
+                "encoder_layout is a convenience field for the built-in MCP dial. "
+                "Do not combine with path/action_type/plugin_uuid/action_uuid."
+            )
         action_type = button.get("action_type")
         if action_type == "next_page":
             return self._build_navigation_action(direction="next")
@@ -1295,12 +1306,31 @@ class ProfileManager:
         return ensure_mcp_plugin_installed(force=force)
 
     def _build_mcp_dial_action(self, button: dict[str, Any]) -> dict[str, Any]:
-        from streamdeck_plugin import ACTION_UUID, PLUGIN_UUID, PLUGIN_VERSION
+        from streamdeck_plugin import (
+            DEFAULT_ACTION_UUID,
+            LAYOUT_ACTION_UUIDS,
+            PLUGIN_UUID,
+            PLUGIN_VERSION,
+            SUPPORTED_ENCODER_LAYOUTS,
+        )
+
+        encoder_layout = button.get("encoder_layout")
+        if encoder_layout is not None:
+            if encoder_layout not in LAYOUT_ACTION_UUIDS:
+                raise ProfileValidationError(
+                    f"Unknown encoder_layout '{encoder_layout}'. "
+                    f"Supported: {', '.join(SUPPORTED_ENCODER_LAYOUTS)}."
+                )
+            action_uuid = LAYOUT_ACTION_UUIDS[encoder_layout]
+            name = f"MCP Dial ({encoder_layout})"
+        else:
+            action_uuid = DEFAULT_ACTION_UUID
+            name = "MCP Dial"
 
         return {
             "ActionID": str(uuid.uuid4()),
             "LinkedTitle": False,
-            "Name": "MCP Dial",
+            "Name": name,
             "Plugin": {
                 "Name": "streamdeck-mcp",
                 "UUID": PLUGIN_UUID,
@@ -1309,7 +1339,7 @@ class ProfileManager:
             "Settings": copy.deepcopy(button.get("settings", {})),
             "State": 0,
             "States": [{}],
-            "UUID": ACTION_UUID,
+            "UUID": action_uuid,
         }
 
     def _build_navigation_action(self, *, direction: str) -> dict[str, Any]:

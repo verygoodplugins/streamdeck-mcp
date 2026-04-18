@@ -93,6 +93,21 @@ async def list_tools() -> list[Tool]:
                     "keypad button is an error."
                 ),
             },
+            "encoder_layout": {
+                "type": "string",
+                "enum": ["$X1", "$A0", "$A1", "$B1", "$B2", "$C1"],
+                "description": (
+                    "Encoder/dial only: built-in Elgato touchstrip layout. Omit for "
+                    "the default (no declared layout → Elgato default composition with "
+                    "full-strip background show-through). Choose a variant for plugin-"
+                    "rendered layouts: $X1 (title + centered icon), $A0 (title + full-"
+                    "width image), $A1 (title + icon + value slot), $B1 (progress bar), "
+                    "$B2 (gradient progress), $C1 (dual icon/progress rows). Selecting "
+                    "a layout forgoes strip-background show-through — the declared "
+                    "layout replaces the default composition. Do not combine with "
+                    "path/action_type/plugin_uuid/action_uuid."
+                ),
+            },
             "path": {
                 "type": "string",
                 "description": (

@@ -3,7 +3,7 @@
     "Author": "Very Good Plugins",
     "Description": "Renders images and titles set by the streamdeck-mcp profile writer on keypad keys and Stream Deck + touchstrip segments.",
     "URL": "https://github.com/verygoodplugins/streamdeck-mcp",
-    "Version": "0.1.0",
+    "Version": "0.2.0",
     "CodePath": "plugin.html",
     "Icon": "Images/plugin",
     "Category": "streamdeck-mcp",
@@ -24,6 +24,114 @@
             "States": [{ "Image": "Images/action", "TitleAlignment": "bottom" }],
             "Controllers": ["Keypad", "Encoder"],
             "Encoder": {
+                "StackColor": "#000000",
+                "TriggerDescription": {
+                    "Rotate": "",
+                    "Push": "",
+                    "Touch": ""
+                }
+            }
+        },
+        {
+            "UUID": "io.github.verygoodplugins.streamdeck-mcp.dial.x1",
+            "Name": "MCP Dial ($X1 — icon)",
+            "Tooltip": "streamdeck-mcp dial with Elgato built-in $X1 layout (title + centered icon).",
+            "Icon": "Images/action",
+            "PropertyInspectorPath": "",
+            "States": [{ "Image": "Images/action", "TitleAlignment": "bottom" }],
+            "Controllers": ["Encoder"],
+            "Encoder": {
+                "layout": "$X1",
+                "StackColor": "#000000",
+                "TriggerDescription": {
+                    "Rotate": "",
+                    "Push": "",
+                    "Touch": ""
+                }
+            }
+        },
+        {
+            "UUID": "io.github.verygoodplugins.streamdeck-mcp.dial.a0",
+            "Name": "MCP Dial ($A0 — full image)",
+            "Tooltip": "streamdeck-mcp dial with Elgato built-in $A0 layout (title + full-width image canvas).",
+            "Icon": "Images/action",
+            "PropertyInspectorPath": "",
+            "States": [{ "Image": "Images/action", "TitleAlignment": "bottom" }],
+            "Controllers": ["Encoder"],
+            "Encoder": {
+                "layout": "$A0",
+                "StackColor": "#000000",
+                "TriggerDescription": {
+                    "Rotate": "",
+                    "Push": "",
+                    "Touch": ""
+                }
+            }
+        },
+        {
+            "UUID": "io.github.verygoodplugins.streamdeck-mcp.dial.a1",
+            "Name": "MCP Dial ($A1 — icon + value)",
+            "Tooltip": "streamdeck-mcp dial with Elgato built-in $A1 layout (title + icon + value slot).",
+            "Icon": "Images/action",
+            "PropertyInspectorPath": "",
+            "States": [{ "Image": "Images/action", "TitleAlignment": "bottom" }],
+            "Controllers": ["Encoder"],
+            "Encoder": {
+                "layout": "$A1",
+                "StackColor": "#000000",
+                "TriggerDescription": {
+                    "Rotate": "",
+                    "Push": "",
+                    "Touch": ""
+                }
+            }
+        },
+        {
+            "UUID": "io.github.verygoodplugins.streamdeck-mcp.dial.b1",
+            "Name": "MCP Dial ($B1 — progress)",
+            "Tooltip": "streamdeck-mcp dial with Elgato built-in $B1 layout (title + icon + progress bar).",
+            "Icon": "Images/action",
+            "PropertyInspectorPath": "",
+            "States": [{ "Image": "Images/action", "TitleAlignment": "bottom" }],
+            "Controllers": ["Encoder"],
+            "Encoder": {
+                "layout": "$B1",
+                "StackColor": "#000000",
+                "TriggerDescription": {
+                    "Rotate": "",
+                    "Push": "",
+                    "Touch": ""
+                }
+            }
+        },
+        {
+            "UUID": "io.github.verygoodplugins.streamdeck-mcp.dial.b2",
+            "Name": "MCP Dial ($B2 — gradient progress)",
+            "Tooltip": "streamdeck-mcp dial with Elgato built-in $B2 layout (title + icon + gradient progress bar).",
+            "Icon": "Images/action",
+            "PropertyInspectorPath": "",
+            "States": [{ "Image": "Images/action", "TitleAlignment": "bottom" }],
+            "Controllers": ["Encoder"],
+            "Encoder": {
+                "layout": "$B2",
+                "StackColor": "#000000",
+                "TriggerDescription": {
+                    "Rotate": "",
+                    "Push": "",
+                    "Touch": ""
+                }
+            }
+        },
+        {
+            "UUID": "io.github.verygoodplugins.streamdeck-mcp.dial.c1",
+            "Name": "MCP Dial ($C1 — dual rows)",
+            "Tooltip": "streamdeck-mcp dial with Elgato built-in $C1 layout (title + dual icon/progress rows).",
+            "Icon": "Images/action",
+            "PropertyInspectorPath": "",
+            "States": [{ "Image": "Images/action", "TitleAlignment": "bottom" }],
+            "Controllers": ["Encoder"],
+            "Encoder": {
+                "layout": "$C1",
                 "StackColor": "#000000",
                 "TriggerDescription": {
                     "Rotate": "",

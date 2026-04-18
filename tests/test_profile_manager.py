@@ -974,3 +974,167 @@ def test_write_page_auto_installs_mcp_plugin_for_encoder_default(
     )
     assert result["mcp_plugin_install"]["installed"] is True
     assert (plugins_dir / PLUGIN_DIR_NAME / "manifest.json").exists()
+
+
+def _read_plus_xl_encoder_action(profiles_dir: Path, key: str) -> dict:
+    raw = json.loads(
+        (
+            profiles_dir
+            / "PLUSXL.sdProfile"
+            / "Profiles"
+            / "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD"
+            / "manifest.json"
+        ).read_text()
+    )
+    encoder_actions = next(
+        c["Actions"] for c in raw["Controllers"] if c["Type"] == "Encoder"
+    )
+    return encoder_actions[key]
+
+
+def test_write_page_encoder_layout_routes_to_variant_uuid(
+    sample_profiles_plus_xl: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from streamdeck_plugin import LAYOUT_ACTION_UUIDS, PLUGIN_UUID
+
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: tmp_path / "plugins")
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    icon = manager.create_icon(icon="mdi:volume-high", filename="vol")
+
+    manager.write_page(
+        profile_name="Plus XL",
+        page_index=0,
+        buttons=[
+            {
+                "controller": "encoder",
+                "key": 0,
+                "icon_path": icon["path"],
+                "title": "Volume",
+                "encoder_layout": "$A1",
+            }
+        ],
+        clear_existing=False,
+    )
+
+    action = _read_plus_xl_encoder_action(sample_profiles_plus_xl, "0,0")
+    assert action["UUID"] == LAYOUT_ACTION_UUIDS["$A1"]
+    assert action["Plugin"]["UUID"] == PLUGIN_UUID
+    assert action["Encoder"]["Icon"].startswith("Images/")
+
+
+def test_write_page_encoder_layout_default_uses_default_uuid(
+    sample_profiles_plus_xl: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from streamdeck_plugin import DEFAULT_ACTION_UUID
+
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: tmp_path / "plugins")
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    icon = manager.create_icon(icon="mdi:volume-high", filename="vol")
+
+    manager.write_page(
+        profile_name="Plus XL",
+        page_index=0,
+        buttons=[
+            {
+                "controller": "encoder",
+                "key": 0,
+                "icon_path": icon["path"],
+                "title": "Volume",
+            }
+        ],
+        clear_existing=False,
+    )
+
+    action = _read_plus_xl_encoder_action(sample_profiles_plus_xl, "0,0")
+    assert action["UUID"] == DEFAULT_ACTION_UUID
+
+
+def test_write_page_rejects_unknown_encoder_layout(
+    sample_profiles_plus_xl: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: tmp_path / "plugins")
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    with pytest.raises(ProfileValidationError, match=r"\$A1"):
+        manager.write_page(
+            profile_name="Plus XL",
+            page_index=0,
+            buttons=[
+                {
+                    "controller": "encoder",
+                    "key": 0,
+                    "title": "Nope",
+                    "encoder_layout": "$Z9",
+                }
+            ],
+            clear_existing=False,
+        )
+
+
+def test_write_page_rejects_encoder_layout_on_keypad(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    with pytest.raises(ProfileValidationError, match="encoder_layout"):
+        manager.write_page(
+            profile_name="Default Profile",
+            directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            buttons=[
+                {
+                    "key": 0,
+                    "title": "Nope",
+                    "encoder_layout": "$A1",
+                    "action_type": "next_page",
+                }
+            ],
+        )
+
+
+def test_write_page_auto_installs_mcp_plugin_for_layout_variant(
+    sample_profiles_plus_xl: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from streamdeck_plugin import PLUGIN_DIR_NAME
+
+    plugins_dir = tmp_path / "plugins"
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: plugins_dir)
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    icon = manager.create_icon(icon="mdi:volume-high", filename="vol")
+
+    result = manager.write_page(
+        profile_name="Plus XL",
+        page_index=0,
+        buttons=[
+            {
+                "controller": "encoder",
+                "key": 0,
+                "icon_path": icon["path"],
+                "title": "V",
+                "encoder_layout": "$B1",
+            }
+        ],
+        clear_existing=False,
+    )
+    assert result["mcp_plugin_install"]["installed"] is True
+    assert (plugins_dir / PLUGIN_DIR_NAME / "manifest.json").exists()

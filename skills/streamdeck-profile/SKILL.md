@@ -81,8 +81,11 @@ These are the source of truth for manifest schemas, image dimensions, and touchs
 
 ### Built-in touchstrip layouts
 
+Pass `encoder_layout: "$A1"` (etc.) on an encoder button in `streamdeck_write_page` to opt into a layout. Omit `encoder_layout` for the default (Elgato default composition with full-strip background show-through). Picking a variant forgoes show-through — the declared layout replaces the default composition.
+
 | Layout | Semantics |
 |--------|-----------|
+| *(omit)* | Default: icon over `Encoder.background`, full-strip `Controllers[Encoder].Background` shows through |
 | `$X1` | Title top, icon centered |
 | `$A0` | Title top, full-width image canvas center |
 | `$A1` | Title top, icon left, text value right |
@@ -90,7 +93,9 @@ These are the source of truth for manifest schemas, image dimensions, and touchs
 | `$B2` | Title top, icon left, text + gradient progress bar |
 | `$C1` | Title top, dual icon-left/progress-right rows |
 
-Custom layouts are supported as JSON shipped with the plugin.
+Each variant is a separate action UUID in the bundled plugin (`io.github.verygoodplugins.streamdeck-mcp.dial.<x1|a0|a1|b1|b2|c1>`) with `Encoder.layout` statically declared — the only Elgato-documented, durable way to set a layout.
+
+Custom layouts (JSON shipped with the plugin) are not yet supported; deferred until a concrete layout requires it.
 
 ### Touchstrip custom art goes in the profile manifest, not `setFeedback`
 
