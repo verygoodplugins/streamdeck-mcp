@@ -370,16 +370,17 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="streamdeck_create_icon",
             description=(
-                "Generate one or many 72x72 PNG icons. For a single icon: pass "
-                "'icon' (a Material Design Icons name like 'mdi:cpu-64-bit') OR "
-                "'text' (mutually exclusive with 'icon' — titles go on "
-                "streamdeck_write_page's 'title' field since Elgato overlays them "
-                "on images). For a full deck (often 30+ icons): pass 'icons' as a "
-                "list of spec dicts to generate them all in one call and avoid the "
-                "round-trip timeouts serial calls hit. ~7400 MDI icons bundled "
-                "offline; unknown names return close-match suggestions. Returns "
-                "either a single {path, size, ...} dict or {\"icons\": [...]} when "
-                "'icons' is used (each list element is a per-icon result or an "
+                "Generate one or many PNG icons. Button icons are 72x72 px; "
+                "touchstrip segment icons are 200x100 px (use shape='touchstrip'). "
+                "For a single icon: pass 'icon' (a Material Design Icons name like "
+                "'mdi:cpu-64-bit') OR 'text' (mutually exclusive with 'icon' — "
+                "titles go on streamdeck_write_page's 'title' field since Elgato "
+                "overlays them on images). For a full deck (often 30+ icons): pass "
+                "'icons' as a list of spec dicts to generate them all in one call "
+                "and avoid the round-trip timeouts serial calls hit. ~7400 MDI icons "
+                "bundled offline; unknown names return close-match suggestions. "
+                "Returns either a single {path, size, ...} dict or {\"icons\": [...]} "
+                "when 'icons' is used (each list element is a per-icon result or an "
                 "{\"error\"} entry for that spec)."
             ),
             inputSchema={

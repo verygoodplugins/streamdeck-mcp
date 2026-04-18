@@ -2,7 +2,7 @@
 
 The Stream Deck + XL's touch strip is a 1200×100 LCD split into six 200×100 segments, one per encoder (dial). Each segment renders either a layout (title + image + value components composed per Elgato's rules) or defers to a full-strip background that shows through all six segments as one continuous ribbon.
 
-Streamdeck-mcp gives you two levers for each dial:
+streamdeck-mcp gives you two levers for each dial:
 1. **Action UUID variant** (the `encoder_layout` field on `streamdeck_write_page`) — static choice made at authoring time.
 2. **Per-dial imagery** (the `icon_path` and `strip_background_path` fields) — the pixels that render in whichever layout slots the chosen UUID exposes.
 

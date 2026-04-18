@@ -911,25 +911,52 @@ class ProfileManager:
             if not isinstance(spec, dict):
                 results.append({"error": f"specs[{index}] must be a dict."})
                 continue
-            scale = spec.get("icon_scale")
+
+            # Coerce per-spec string values that may arrive stringified from
+            # LLM output or transport coercion.
+            scale_raw = spec.get("icon_scale")
+            if isinstance(scale_raw, str):
+                try:
+                    scale_raw = float(scale_raw)
+                except ValueError:
+                    pass  # let downstream raise a clear TypeError/ValueError
+
+            font_size_raw = spec.get("font_size", 18)
+            if isinstance(font_size_raw, str):
+                try:
+                    font_size_raw = int(font_size_raw)
+                except ValueError:
+                    pass
+
+            tb_raw = spec.get("transparent_bg", False)
+            if isinstance(tb_raw, str):
+                lowered = tb_raw.strip().lower()
+                if lowered in ("true", "1", "yes"):
+                    tb_raw = True
+                elif lowered in ("false", "0", "no"):
+                    tb_raw = False
+                # Unrecognized strings (including "") are left as-is;
+                # bool() below will treat non-empty strings as True.
+            transparent_bg = bool(tb_raw)
+
             kwargs = {
                 "text": spec.get("text"),
                 "icon": spec.get("icon"),
                 "icon_color": spec.get("icon_color"),
-                "icon_scale": 1.0 if scale is None else scale,
+                "icon_scale": 1.0 if scale_raw is None else scale_raw,
                 "bg_color": spec.get("bg_color", DEFAULT_BG_COLOR),
                 "text_color": spec.get("text_color", DEFAULT_TEXT_COLOR),
-                "font_size": spec.get("font_size", 18),
+                "font_size": font_size_raw,
                 "filename": spec.get("filename"),
                 "shape": spec.get("shape", "button"),
-                "transparent_bg": bool(spec.get("transparent_bg", False)),
+                "transparent_bg": transparent_bg,
             }
             try:
                 results.append(self.create_icon(**kwargs))
-            except (ProfileValidationError, ProfileManagerError, ValueError) as exc:
+            except (ProfileValidationError, ProfileManagerError, ValueError, TypeError) as exc:
                 # ValueError covers mdi_icons.IconNotFoundError (a ValueError
-                # subclass). Record the failure so one bad spec doesn't abort
-                # the rest of the batch.
+                # subclass). TypeError covers bad numeric types after coercion.
+                # Record the failure so one bad spec doesn't abort the batch.
                 results.append({"error": str(exc), "spec_index": index})
         return results
 

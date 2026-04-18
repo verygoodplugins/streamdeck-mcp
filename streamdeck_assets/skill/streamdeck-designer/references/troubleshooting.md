@@ -63,7 +63,7 @@ If nothing fits: fall back to `text="XY"` (short text icon) or generate the PNG 
 
 ## "Icon + title text are doubled up"
 
-On-device, a button shows both a bakedin text on the icon PNG *and* a title overlaid at the bottom.
+On-device, a button shows both a baked-in text on the icon PNG *and* a title overlaid at the bottom.
 
 **Cause**: you called `streamdeck_create_icon` with both `icon="mdi:..."` and `text="..."`, or you baked a title into a text-only icon and *also* set the button's `title` field.
 
