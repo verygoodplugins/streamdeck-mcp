@@ -77,16 +77,14 @@ MODEL_LAYOUTS: dict[str, dict[str, tuple[int, int]]] = {
     "20GBX9901": {KEYPAD: (9, 4), ENCODER: (6, 1)},
     # Stream Deck Mini (6 keys)
     "20GAI9501": {KEYPAD: (3, 2)},
-    # Stream Deck Neo (8 keys + touchscreen)
-    "20GBD9901": {KEYPAD: (4, 2)},
+    # Stream Deck + (8 keys + 4 dials + 800x100 touchstrip, released 2022).
+    # Profile manifests for this model carry a full Encoder controller with
+    # 4 dial actions at 0,0…3,0 plus a touchstrip Background image, which
+    # is what the encoder layout below records.
+    "20GBD9901": {KEYPAD: (4, 2), ENCODER: (4, 1)},
     # Emulator used by the Elgato desktop app ("UI" in older builds, "AI" in recent)
     "UI Stream Deck": {KEYPAD: (4, 2)},
     "AI Stream Deck": {KEYPAD: (4, 2)},
-    # NOTE: the original Stream Deck + (8 keys + 4 dials + 800x100 touchstrip,
-    # released 2022) has not yet been observed in a profile manifest and its
-    # Elgato-app product ID is unknown. When a profile reports an unknown Model
-    # with encoders present, _resolve_layout falls back to the 5x3 default — add
-    # that model's ID here (with ENCODER: (4, 1) and KEYPAD: (4, 2)) when seen.
 }
 
 # Human-readable names for the model IDs the Elgato desktop app writes to
@@ -101,7 +99,7 @@ MODEL_NAMES: dict[str, str] = {
     "20GBA9902": "Stream Deck XL rev2",
     "20GBX9901": "Stream Deck + XL",
     "20GAI9501": "Stream Deck Mini",
-    "20GBD9901": "Stream Deck Neo",
+    "20GBD9901": "Stream Deck +",
     "UI Stream Deck": "UI Stream Deck (emulator)",
     "AI Stream Deck": "AI Stream Deck (virtual deck / Elgato app companion)",
 }
