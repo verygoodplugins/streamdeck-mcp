@@ -440,6 +440,138 @@ def sample_profiles_plus_xl(tmp_path: Path) -> Path:
     return profiles_dir
 
 
+@pytest.fixture
+def sample_profiles_plus(tmp_path: Path) -> Path:
+    """Profile shaped like an original Stream Deck +: Keypad 4x2 + Encoder 4x1 on the same page."""
+
+    profiles_dir = tmp_path / "ProfilesV3"
+    profile_dir = profiles_dir / "PLUS.sdProfile"
+    page_uuid = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+
+    profile_manifest = {
+        "AppIdentifier": "*",
+        "Device": {"Model": "20GBD9901", "UUID": "@(1)[4057/132/A5Z5A43312X46E]"},
+        "Name": "Plus",
+        "Pages": {
+            "Current": page_uuid,
+            "Default": page_uuid,
+            "Pages": [page_uuid],
+        },
+        "Version": "3.0",
+    }
+    dial_action = {
+        "ActionID": "dial-brightness",
+        "LinkedTitle": True,
+        "Name": "Brightness",
+        "Plugin": {
+            "Name": "Brightness",
+            "UUID": "com.elgato.streamdeck.system.keybrightness",
+            "Version": "1.0",
+        },
+        "Settings": {"actionIdx": 0},
+        "State": 0,
+        "States": [{"Title": "SD+ Brightness"}],
+        "UUID": "com.elgato.streamdeck.system.keybrightness",
+    }
+    key_action = {
+        "ActionID": "action-open",
+        "LinkedTitle": False,
+        "Name": "Open",
+        "Plugin": {
+            "Name": "Open",
+            "UUID": "com.elgato.streamdeck.system.open",
+            "Version": "1.0",
+        },
+        "Settings": {"path": '"/tmp/example.sh"'},
+        "State": 0,
+        "States": [{"Title": "Run"}],
+        "UUID": "com.elgato.streamdeck.system.open",
+    }
+    page_manifest = {
+        "Controllers": [
+            {"Type": "Keypad", "Actions": {"0,0": key_action}},
+            {"Type": "Encoder", "Actions": {"2,0": dial_action}},
+        ],
+        "Icon": "",
+        "Name": "Plus Page",
+    }
+
+    _write_json(profile_dir / "manifest.json", profile_manifest)
+    _write_json(
+        profile_dir / "Profiles" / page_uuid.upper() / "manifest.json",
+        page_manifest,
+    )
+    return profiles_dir
+
+
+def test_plus_device_exposes_encoder_layout(sample_profiles_plus: Path, tmp_path: Path) -> None:
+    """20GBD9901 (Stream Deck +) must expose a 4x1 Encoder alongside its 4x2 Keypad."""
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    page = manager.read_page(profile_name="Plus", page_index=0)
+
+    assert page["layout"] == {"columns": 4, "rows": 2}
+    assert page["layouts"] == {
+        "keypad": {"columns": 4, "rows": 2},
+        "encoder": {"columns": 4, "rows": 1},
+    }
+    controllers = {button["controller"] for button in page["buttons"]}
+    assert controllers == {"keypad", "encoder"}
+
+
+def test_plus_device_accepts_encoder_writes(
+    sample_profiles_plus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Writing an encoder button to a 20GBD9901 profile must land in the Encoder controller,
+    not raise ``Device model does not expose a 'Encoder' controller``."""
+
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: tmp_path / "plugins")
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    manager.write_page(
+        profile_name="Plus",
+        page_index=0,
+        buttons=[
+            {
+                "controller": "dial",
+                "key": 3,
+                "action_type": "next_page",
+                "title": "Next",
+            }
+        ],
+        clear_existing=False,
+    )
+
+    page = manager.read_page(profile_name="Plus", page_index=0)
+    encoder_positions = {b["position"] for b in page["buttons"] if b["controller"] == "encoder"}
+    assert encoder_positions == {"2,0", "3,0"}
+
+
+def test_plus_device_reports_correct_model_name(
+    sample_profiles_plus: Path, tmp_path: Path
+) -> None:
+    """20GBD9901 must surface as 'Stream Deck +' (not 'Stream Deck Neo')."""
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    profiles = manager.list_profiles()
+    assert len(profiles) == 1
+    assert profiles[0]["device"]["ModelName"] == "Stream Deck +"
+
+
 def test_read_page_returns_both_controllers(sample_profiles_plus_xl: Path, tmp_path: Path) -> None:
     manager = ProfileManager(
         profiles_dir=sample_profiles_plus_xl,
