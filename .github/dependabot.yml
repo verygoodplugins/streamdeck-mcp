@@ -4,24 +4,32 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 2
     groups:
-      production-dependencies:
+      pip-version-updates:
+        applies-to: version-updates
         patterns:
           - "*"
-        exclude-patterns:
-          - "pytest*"
-          - "ruff"
-      dev-dependencies:
+      pip-security-updates:
+        applies-to: security-updates
         patterns:
-          - "pytest*"
-          - "ruff"
+          - "*"
     commit-message:
       prefix: "chore(deps)"
-    open-pull-requests-limit: 10
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 2
+    groups:
+      actions-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      actions-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
     commit-message:
       prefix: "chore(deps)"
