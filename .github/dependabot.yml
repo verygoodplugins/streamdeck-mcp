@@ -5,23 +5,10 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      production-dependencies:
-        patterns:
-          - "*"
-        exclude-patterns:
-          - "pytest*"
-          - "ruff"
+      runtime-dependencies:
+        dependency-type: "production"
       dev-dependencies:
-        patterns:
-          - "pytest*"
-          - "ruff"
+        dependency-type: "development"
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 10
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "chore(deps)"

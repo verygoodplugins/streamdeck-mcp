@@ -27,9 +27,9 @@ jobs:
             exit 0
           fi
 
-          echo "PR title must use Conventional Commits so squash-merge commits on main stay clean."
+          echo "PR title must use Conventional Commits so squash-merge commits on main have clean, consistent messages."
           echo "Allowed prefixes: feat, fix, docs, chore, refactor, test, perf, build, ci, revert"
           echo "Examples:"
-          echo "  feat: add desktop profile writer"
-          echo "  fix(profile): preserve native image paths"
+          echo "  fix: harden push approval auth flow"
+          echo "  feat(auth): add TOTP support"
           exit 1

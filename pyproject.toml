@@ -17,7 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mcp[cli]>=1.6.0",
+    "mcp>=1.0.0",
     "streamdeck>=0.9.0",
     "pillow>=10.0.0",
 ]
