@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/verygoodplugins/streamdeck-mcp/compare/v0.2.0...v0.3.0) (2026-04-22)
+
+
+### Features
+
+* **icons:** bundle Material Design Icons for offline glyph rendering ([#19](https://github.com/verygoodplugins/streamdeck-mcp/issues/19)) ([459d410](https://github.com/verygoodplugins/streamdeck-mcp/commit/459d41032bf60375b3fc480a13fb123d2f1457c5))
+* **profile:** preserve encoder controller + Stream Deck + XL layout ([#15](https://github.com/verygoodplugins/streamdeck-mcp/issues/15)) ([f4a8402](https://github.com/verygoodplugins/streamdeck-mcp/commit/f4a840219ea7e4ff81e9bec51352518458ce16f9))
+* **profile:** refuse writes while Elgato app is running + restart_app path fix ([#16](https://github.com/verygoodplugins/streamdeck-mcp/issues/16)) ([e1cb4e3](https://github.com/verygoodplugins/streamdeck-mcp/commit/e1cb4e37e053bbaa7b69ef1984d1e322a98d061a))
+* **skill:** streamdeck-designer Agent Skill + MCP transport hardening ([#22](https://github.com/verygoodplugins/streamdeck-mcp/issues/22)) ([fd3ec6f](https://github.com/verygoodplugins/streamdeck-mcp/commit/fd3ec6fc105b0781e85a4d39b16a0df52c76544b))
+* **touchstrip:** expose $X1/$A0/$A1/$B1/$B2/$C1 encoder layouts ([#21](https://github.com/verygoodplugins/streamdeck-mcp/issues/21)) ([efa66e4](https://github.com/verygoodplugins/streamdeck-mcp/commit/efa66e48f9158c5e21f871aeceef78e53b1f75ad))
+* **touchstrip:** per-segment icon and background on Stream Deck + / + XL ([#20](https://github.com/verygoodplugins/streamdeck-mcp/issues/20)) ([a41a31c](https://github.com/verygoodplugins/streamdeck-mcp/commit/a41a31ca8bbda7bb2ed9cc0e3b6c7ab9da267f97))
+
+
+### Bug Fixes
+
+* add Stream Deck XL and missing device layouts ([#10](https://github.com/verygoodplugins/streamdeck-mcp/issues/10)) ([c89435b](https://github.com/verygoodplugins/streamdeck-mcp/commit/c89435bcab50cd85f855f255c22fdb8304e11f3f))
+* **profile:** correct Stream Deck + XL keypad layout to 9x4 ([#18](https://github.com/verygoodplugins/streamdeck-mcp/issues/18)) ([d6da4b2](https://github.com/verygoodplugins/streamdeck-mcp/commit/d6da4b29af60a0c724ecc6e57bd0ba28ab951f0d))
+* **profile:** map 20GBD9901 to Stream Deck + (4 dials + 4x2 keypad) ([#25](https://github.com/verygoodplugins/streamdeck-mcp/issues/25)) ([da0ada5](https://github.com/verygoodplugins/streamdeck-mcp/commit/da0ada56ba2f8efdbd683abb9eb5158664896f5c))
+
 ## [0.2.0](https://github.com/verygoodplugins/streamdeck-mcp/compare/v0.1.2...v0.2.0) (2026-03-23)
 
 
