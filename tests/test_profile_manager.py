@@ -556,9 +556,7 @@ def test_plus_device_accepts_encoder_writes(
     assert encoder_positions == {"2,0", "3,0"}
 
 
-def test_plus_device_reports_correct_model_name(
-    sample_profiles_plus: Path, tmp_path: Path
-) -> None:
+def test_plus_device_reports_correct_model_name(sample_profiles_plus: Path, tmp_path: Path) -> None:
     """20GBD9901 must surface as 'Stream Deck +' (not 'Stream Deck Neo')."""
 
     manager = ProfileManager(
@@ -903,8 +901,7 @@ def test_create_icon_mdi_glyph_only(tmp_path: Path) -> None:
             greenish_pixels += 1
 
     assert greenish_pixels >= 25, (
-        f"expected rendered glyph to contain greenish non-background pixels, got "
-        f"{greenish_pixels}"
+        f"expected rendered glyph to contain greenish non-background pixels, got {greenish_pixels}"
     )
 
 
@@ -1050,9 +1047,7 @@ def test_write_page_encoder_writes_encoder_icon_and_background(
         generated_icons_dir=tmp_path / "icons",
     )
     icon = manager.create_icon(icon="mdi:volume-high", filename="vol")
-    strip = manager.create_icon(
-        icon="mdi:volume-high", shape="touchstrip", filename="vol-strip"
-    )
+    strip = manager.create_icon(icon="mdi:volume-high", shape="touchstrip", filename="vol-strip")
 
     manager.write_page(
         profile_name="Plus XL",
@@ -1078,9 +1073,7 @@ def test_write_page_encoder_writes_encoder_icon_and_background(
             / "manifest.json"
         ).read_text()
     )
-    encoder_actions = next(
-        c["Actions"] for c in raw["Controllers"] if c["Type"] == "Encoder"
-    )
+    encoder_actions = next(c["Actions"] for c in raw["Controllers"] if c["Type"] == "Encoder")
     action = encoder_actions["0,0"]
     assert action["UUID"] == "io.github.verygoodplugins.streamdeck-mcp.dial"
     assert action["Encoder"]["Icon"].startswith("Images/")
@@ -1131,9 +1124,7 @@ def test_write_page_auto_installs_mcp_plugin_for_encoder_default(
     result = manager.write_page(
         profile_name="Plus XL",
         page_index=0,
-        buttons=[
-            {"controller": "encoder", "key": 0, "icon_path": icon["path"], "title": "V"}
-        ],
+        buttons=[{"controller": "encoder", "key": 0, "icon_path": icon["path"], "title": "V"}],
         clear_existing=False,
     )
     assert result["mcp_plugin_install"]["installed"] is True
@@ -1150,9 +1141,7 @@ def _read_plus_xl_encoder_action(profiles_dir: Path, key: str) -> dict:
             / "manifest.json"
         ).read_text()
     )
-    encoder_actions = next(
-        c["Actions"] for c in raw["Controllers"] if c["Type"] == "Encoder"
-    )
+    encoder_actions = next(c["Actions"] for c in raw["Controllers"] if c["Type"] == "Encoder")
     return encoder_actions[key]
 
 

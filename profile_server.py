@@ -45,11 +45,7 @@ manager = ProfileManager()
 server = Server("streamdeck-profile-mcp")
 
 _SKILL_PATH = (
-    Path(__file__).parent
-    / "streamdeck_assets"
-    / "skill"
-    / "streamdeck-designer"
-    / "SKILL.md"
+    Path(__file__).parent / "streamdeck_assets" / "skill" / "streamdeck-designer" / "SKILL.md"
 )
 
 
@@ -379,9 +375,9 @@ async def list_tools() -> list[Tool]:
                 "'icons' as a list of spec dicts to generate them all in one call "
                 "and avoid the round-trip timeouts serial calls hit. ~7400 MDI icons "
                 "bundled offline; unknown names return close-match suggestions. "
-                "Returns either a single {path, size, ...} dict or {\"icons\": [...]} "
+                'Returns either a single {path, size, ...} dict or {"icons": [...]} '
                 "when 'icons' is used (each list element is a per-icon result or an "
-                "{\"error\"} entry for that spec)."
+                '{"error"} entry for that spec).'
             ),
             inputSchema={
                 "type": "object",
@@ -397,8 +393,7 @@ async def list_tools() -> list[Tool]:
                     "icon_color": {
                         "type": "string",
                         "description": (
-                            "Hex color for the icon glyph, e.g. '#00ff88'. "
-                            "Defaults to text_color."
+                            "Hex color for the icon glyph, e.g. '#00ff88'. Defaults to text_color."
                         ),
                     },
                     "icon_scale": {
@@ -450,7 +445,7 @@ async def list_tools() -> list[Tool]:
                             "transparent_bg/text_color/font_size/filename). When "
                             "this field is present, all other single-icon fields "
                             "at the top level are ignored and the response shape "
-                            "becomes {\"icons\": [per-spec result]}. Use this for "
+                            'becomes {"icons": [per-spec result]}. Use this for '
                             "30+ icon decks to avoid per-call round-trip cost. "
                             "Accepts either a JSON array or a JSON-encoded string "
                             "containing an array — some MCP clients stringify "
