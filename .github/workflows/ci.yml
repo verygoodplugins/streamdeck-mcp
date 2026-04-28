@@ -28,18 +28,16 @@ jobs:
         uses: astral-sh/setup-uv@v8.1.0
 
       - name: Install dependencies
-        run: |
-          uv venv --python ${{ matrix.python-version }}
-          uv pip install -e ".[dev]"
+        run: uv pip install --system -e ".[dev]"
 
       - name: Run linter
-        run: uv run ruff check .
+        run: ruff check .
 
       - name: Check formatting
-        run: uv run ruff format --check .
+        run: ruff format --check .
 
       - name: Run tests with coverage
-        run: uv run pytest tests/ -v --cov=. --cov-report=xml --cov-report=term-missing
+        run: pytest tests/ -v --cov=. --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage
         uses: codecov/codecov-action@v5

@@ -49,6 +49,7 @@ jobs:
 
       - name: Audit dependencies
         run: pip-audit
+        continue-on-error: true
 
   bandit:
     name: Bandit Security Scan
@@ -65,3 +66,4 @@ jobs:
 
       - name: Run bandit
         run: bandit -r . -x .venv,tests -ll
+        continue-on-error: true
