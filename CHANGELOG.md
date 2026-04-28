@@ -12,8 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * make profile writer the default streamdeck server ([#1](https://github.com/verygoodplugins/streamdeck-mcp/issues/1)) ([bdc73c0](https://github.com/verygoodplugins/streamdeck-mcp/commit/bdc73c0654f661dc905eeaddf3791248694db6da))
 
-## [0.2.0] - Unreleased
-
 ### Added
 
 - New `profile_server.py` MCP server that writes directly to Stream Deck desktop profiles

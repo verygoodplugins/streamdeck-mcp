@@ -807,9 +807,7 @@ class ProfileManager:
         if not transparent_bg:
             bg_color = _ensure_hex_color(bg_color, field_name="bg_color")
         text_color = _ensure_hex_color(text_color, field_name="text_color")
-        resolved_icon_color = _ensure_hex_color(
-            icon_color or text_color, field_name="icon_color"
-        )
+        resolved_icon_color = _ensure_hex_color(icon_color or text_color, field_name="icon_color")
 
         self.generated_icons_dir.mkdir(parents=True, exist_ok=True)
         canonical_icon_name: str | None = None
@@ -852,9 +850,7 @@ class ProfileManager:
                     glyph_font_size = max(8, int(round(ref_size * scale)))
                     glyph_font = ImageFont.truetype(str(font_file), glyph_font_size)
             except OSError as exc:
-                raise ProfileManagerError(
-                    f"Could not load bundled MDI font: {exc}"
-                ) from exc
+                raise ProfileManagerError(f"Could not load bundled MDI font: {exc}") from exc
             bbox = draw.textbbox((0, 0), glyph, font=glyph_font)
             gw = bbox[2] - bbox[0]
             gh = bbox[3] - bbox[1]
@@ -900,9 +896,7 @@ class ProfileManager:
         """
 
         if not isinstance(specs, list) or not specs:
-            raise ProfileValidationError(
-                "create_icons requires a non-empty list of icon specs."
-            )
+            raise ProfileValidationError("create_icons requires a non-empty list of icon specs.")
 
         results: list[dict[str, Any]] = []
         for index, spec in enumerate(specs):
@@ -1332,9 +1326,7 @@ class ProfileManager:
     ) -> dict[str, Any]:
         encoder_layout = button.get("encoder_layout")
         if encoder_layout is not None and controller_type != ENCODER:
-            raise ProfileValidationError(
-                "encoder_layout is only valid for encoder/dial buttons."
-            )
+            raise ProfileValidationError("encoder_layout is only valid for encoder/dial buttons.")
         if encoder_layout is not None and any(
             button.get(k) for k in ("path", "action_type", "plugin_uuid", "action_uuid")
         ):
@@ -1408,8 +1400,7 @@ class ProfileManager:
                 elif raw_action is None:
                     # Will be built as an MCP dial action iff no other action spec present.
                     if not any(
-                        button.get(k)
-                        for k in ("path", "action_type", "plugin_uuid", "action_uuid")
+                        button.get(k) for k in ("path", "action_type", "plugin_uuid", "action_uuid")
                     ):
                         return True
                 if button.get("plugin_uuid") == PLUGIN_UUID:
