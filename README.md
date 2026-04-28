@@ -128,9 +128,9 @@ Clients that don't load Claude Code skills (Claude Desktop, Cursor, Codex, …) 
 | `streamdeck_read_profiles` | Lists desktop profiles and page directories from the active ProfilesV3 or ProfilesV2 store |
 | `streamdeck_read_page` | Reads a page manifest and returns simplified button details plus the raw manifest |
 | `streamdeck_write_page` | Creates a new page or rewrites an existing page manifest |
-| `streamdeck_create_icon` | Generates a PNG icon from a Material Design Icons name (e.g. `mdi:cpu-64-bit`) or from text. `shape="button"` (72×72, default) for keypad keys and dial faces; `shape="touchstrip"` (200×100) for + / + XL touch strip backgrounds. ~7,400 MDI icons are bundled offline; unknown names return close-match suggestions |
+| `streamdeck_create_icon` | Generates a PNG icon from a Material Design Icons name (e.g. `mdi:cpu-64-bit`) or from text — provide one or the other, not both. `shape="button"` (72×72, default) for keypad keys and dial faces; `shape="touchstrip"` (200×100) for + / + XL touch strip backgrounds. ~7,400 MDI icons are bundled offline; unknown names return close-match suggestions |
 | `streamdeck_create_action` | Creates an executable shell script in `~/StreamDeckScripts/` and returns an Open action block |
-| `streamdeck_restart_app` | Restarts the Stream Deck desktop app after profile changes |
+| `streamdeck_restart_app` | Restarts the Stream Deck desktop app after profile changes (macOS only — raises on other platforms) |
 | `streamdeck_install_mcp_plugin` | Installs the bundled streamdeck-mcp Stream Deck plugin into the Elgato Plugins directory. `streamdeck_write_page` auto-installs it the first time an encoder needs it, so direct use is rarely required |
 
 ## Editing workflow
@@ -142,6 +142,8 @@ The Elgato desktop app keeps every profile in memory and rewrites the on-disk ma
 3. Call `streamdeck_restart_app` when you're done. The device re-reads the manifests on launch and your changes appear.
 
 `streamdeck_write_page` raises `StreamDeckAppRunningError` when the app is running and `auto_quit_app` isn't set, so you can't accidentally write changes that get silently discarded.
+
+**Platform support.** The running-app guard, `auto_quit_app`, and `streamdeck_restart_app` are macOS-only. On Windows the Elgato app still clobbers manifests on close, so you'll need to quit it manually before authoring and relaunch it after — `auto_quit_app: true` is silently a no-op on non-macOS, and `streamdeck_restart_app` errors.
 
 If your Elgato app lives somewhere other than `/Applications/Elgato Stream Deck.app`, set `STREAMDECK_APP_PATH` to the bundle path.
 
