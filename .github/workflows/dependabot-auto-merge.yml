@@ -6,5 +6,9 @@ on:
 
 jobs:
   auto-merge:
+    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]' }}
+    permissions:
+      contents: write
+      pull-requests: write
     uses: verygoodplugins/.github/.github/workflows/dependabot-auto-merge.yml@main
     secrets: inherit
