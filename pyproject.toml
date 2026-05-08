@@ -1,6 +1,6 @@
 [project]
 name = "streamdeck-mcp"
-version = "0.3.0"
+version = "0.3.1"
 description = "MCP server for Stream Deck profile writing with legacy USB control"
 readme = "README.md"
 license = "MIT"
