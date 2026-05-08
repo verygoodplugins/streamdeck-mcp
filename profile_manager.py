@@ -199,7 +199,7 @@ def _looks_like_uuid(value: str) -> bool:
 
 def _load_json(path: Path) -> dict[str, Any]:
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise ProfileManagerError(f"Missing file: {path}") from exc
     except json.JSONDecodeError as exc:
@@ -209,7 +209,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_suffix(f"{path.suffix}.tmp")
-    temp_path.write_text(json.dumps(data, indent=2, sort_keys=True))
+    temp_path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
     temp_path.replace(path)
 
 

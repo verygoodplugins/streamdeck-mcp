@@ -28,7 +28,7 @@ def _stub_stream_deck_app_not_running():
 
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload))
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _make_page_manifest(actions: dict | None = None, *, name: str = "") -> dict:
@@ -1364,6 +1364,59 @@ def test_list_profiles_marks_unknown_models_clearly(tmp_path: Path) -> None:
     )
     profiles = manager.list_profiles()
     assert profiles[0]["device"]["ModelName"] == "Unknown Stream Deck model (20GZ9999)"
+
+
+def test_list_profiles_reads_utf8_page_manifests(tmp_path: Path) -> None:
+    profiles_dir = tmp_path / "ProfilesV3"
+    profile_dir = profiles_dir / "UTF8.sdProfile"
+    page_uuid = "83480d17-dfd9-4fd1-afbc-7e318f88d2b5"
+    _write_json(
+        profile_dir / "manifest.json",
+        {
+            "AppIdentifier": "*",
+            "Device": {"Model": "20GBA9901", "UUID": "@(1)"},
+            "Name": "UTF-8 Profile",
+            "Pages": {"Current": page_uuid, "Default": None, "Pages": []},
+            "Version": "3.0",
+        },
+    )
+    page_manifest_path = profile_dir / "Profiles" / page_uuid.upper() / "manifest.json"
+    page_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    page_manifest_path.write_text(
+        json.dumps(
+            _make_page_manifest(
+                {
+                    "0,0": {
+                        "ActionID": "action-open",
+                        "Name": "Thumbs up",
+                        "Settings": {"pastedText": "👍"},
+                        "State": 0,
+                        "States": [{}],
+                        "UUID": "com.elgato.streamdeck.system.text",
+                    }
+                },
+                name="Emoji",
+            ),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    manager = ProfileManager(
+        profiles_dir=profiles_dir,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    profiles = manager.list_profiles()
+
+    assert len(profiles) == 1
+    assert profiles[0]["pages"][0]["name"] == "Emoji"
+    page = manager.read_page(profile_name="UTF-8 Profile", page_index=0)
+    pasted_text = page["raw_manifest"]["Controllers"][0]["Actions"]["0,0"]["Settings"][
+        "pastedText"
+    ]
+    assert pasted_text == "👍"
 
 
 def test_create_icons_generates_batch_in_one_call(tmp_path: Path) -> None:
