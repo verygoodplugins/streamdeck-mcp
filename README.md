@@ -158,7 +158,9 @@ If your Elgato app lives somewhere other than `/Applications/Elgato Stream Deck.
 
 The original USB-direct server is preserved for backwards compatibility — useful when you'd rather have the MCP server own the hardware directly (Linux, headless setups, or environments where the Elgato app isn't running). It exposes a different tool surface focused on direct hardware control:
 
-`streamdeck_connect`, `streamdeck_info`, `streamdeck_set_button`, `streamdeck_set_buttons`, `streamdeck_clear_button`, `streamdeck_get_button`, `streamdeck_clear_all`, `streamdeck_set_brightness`, `streamdeck_create_page`, `streamdeck_switch_page`, `streamdeck_list_pages`, `streamdeck_delete_page`, `streamdeck_disconnect`.
+`streamdeck_list_devices`, `streamdeck_connect`, `streamdeck_info`, `streamdeck_set_button`, `streamdeck_set_buttons`, `streamdeck_clear_button`, `streamdeck_get_button`, `streamdeck_clear_all`, `streamdeck_set_brightness`, `streamdeck_create_page`, `streamdeck_switch_page`, `streamdeck_list_pages`, `streamdeck_delete_page`, `streamdeck_disconnect`.
+
+When multiple decks are attached, call `streamdeck_list_devices` first, then pass the desired `serial` to `streamdeck_connect`. Omitting `serial` preserves the legacy behavior of opening the first enumerated deck.
 
 Run via:
 

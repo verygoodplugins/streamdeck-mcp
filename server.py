@@ -258,9 +258,73 @@ class StreamDeckState:
                 "Stream Deck disconnected. Reconnect with streamdeck_connect."
             )
 
-    def connect(self) -> dict[str, Any]:
+    def _enumerate_decks(self) -> list[Any]:
+        """Enumerate attached Stream Deck devices."""
+        try:
+            return DeviceManager().enumerate()
+        except Exception as e:
+            logger.error(f"Failed to enumerate devices: {e}")
+            raise StreamDeckError(f"Failed to scan for Stream Deck devices: {e}")
+
+    def _read_deck_serial(self, deck: Any) -> tuple[str, bool]:
         """
-        Connect to the first available Stream Deck.
+        Read a deck serial, opening the device if needed.
+
+        Returns:
+            Tuple of serial and whether this call opened the device.
+        """
+        opened_here = False
+        try:
+            if not deck.is_open():
+                deck.open()
+                opened_here = True
+            return deck.get_serial_number(), opened_here
+        except Exception as e:
+            if opened_here:
+                try:
+                    deck.close()
+                except Exception as close_error:
+                    logger.warning(
+                        "Failed to close Stream Deck after serial read error: "
+                        f"{close_error}"
+                    )
+            raise StreamDeckError(f"Failed to read Stream Deck serial: {e}")
+
+    def list_devices(self) -> list[dict[str, Any]]:
+        """
+        List attached Stream Deck devices.
+
+        Returns:
+            List of discovered deck metadata
+
+        Raises:
+            StreamDeckError: If enumeration fails
+        """
+        if not HAS_STREAMDECK:
+            raise StreamDeckError(
+                "streamdeck library not installed. Run: pip install streamdeck pillow"
+            )
+
+        devices = []
+        for deck in self._enumerate_decks():
+            serial, opened_here = self._read_deck_serial(deck)
+            try:
+                devices.append(
+                    {
+                        "serial": serial,
+                        "deck_type": deck.deck_type(),
+                        "key_count": deck.key_count(),
+                    }
+                )
+            finally:
+                if opened_here:
+                    deck.close()
+
+        return devices
+
+    def connect(self, serial: str | None = None) -> dict[str, Any]:
+        """
+        Connect to an available Stream Deck.
 
         Returns:
             Dict with connection result and deck info
@@ -279,18 +343,39 @@ class StreamDeckState:
             time.sleep(RECONNECT_DELAY_BASE)
         self._last_connect_attempt = now
 
-        try:
-            decks = DeviceManager().enumerate()
-        except Exception as e:
-            logger.error(f"Failed to enumerate devices: {e}")
-            raise StreamDeckError(f"Failed to scan for Stream Deck devices: {e}")
-
+        decks = self._enumerate_decks()
         if not decks:
             raise StreamDeckError("No Stream Deck found. Check USB connection and permissions.")
 
+        selected_deck = decks[0]
+        selected_is_open = False
+
+        if serial is not None:
+            selected_deck = None
+            available_serials = []
+
+            for deck in decks:
+                deck_serial, opened_here = self._read_deck_serial(deck)
+                available_serials.append(deck_serial)
+
+                if deck_serial == serial:
+                    selected_deck = deck
+                    selected_is_open = opened_here or deck.is_open()
+                    break
+
+                if opened_here:
+                    deck.close()
+
+            if selected_deck is None:
+                raise StreamDeckError(
+                    f"No Stream Deck with serial {serial!r}. "
+                    f"Available serials: {available_serials}"
+                )
+
         try:
-            self.deck = decks[0]
-            self.deck.open()
+            self.deck = selected_deck
+            if not selected_is_open:
+                self.deck.open()
             self.deck.reset()
             self.deck.set_brightness(self._brightness)
             self.deck.set_key_callback(self._key_callback)
@@ -853,7 +938,23 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="streamdeck_connect",
-            description="Connect to a Stream Deck device. Call this first before other operations.",
+            description=(
+                "Connect to a Stream Deck device. Call this first before other operations. "
+                "Use serial to choose a specific deck when multiple are attached."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "serial": {
+                        "type": "string",
+                        "description": "Optional Stream Deck serial number to connect to",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="streamdeck_list_devices",
+            description="List attached Stream Deck devices without requiring an active connection",
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -1099,7 +1200,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                     )
                 ]
 
-            info = state.connect()
+            info = state.connect(serial=arguments.get("serial"))
             return [
                 TextContent(
                     type="text",
@@ -1109,6 +1210,21 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                     f"   Firmware: {info['firmware']}",
                 )
             ]
+
+        elif name == "streamdeck_list_devices":
+            if not HAS_STREAMDECK:
+                return [
+                    TextContent(
+                        type="text",
+                        text=(
+                            "❌ streamdeck library not installed. "
+                            "Run: pip install streamdeck pillow"
+                        ),
+                    )
+                ]
+
+            devices = state.list_devices()
+            return [TextContent(type="text", text=json.dumps(devices, indent=2))]
 
         elif name == "streamdeck_info":
             info = state.get_deck_info()

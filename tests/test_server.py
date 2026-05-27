@@ -24,13 +24,34 @@ sys.modules["StreamDeck.ImageHelpers"] = mock_streamdeck.ImageHelpers
 from server import (  # noqa: E402,I001
     DeckNotConnectedError,
     StreamDeckState,
+    StreamDeckError,
     ValidationError,
+    list_tools,
     subprocess as server_subprocess,
 )
 
 
 class TestStreamDeckState:
     """Tests for StreamDeckState class."""
+
+    def _mock_deck(
+        self,
+        *,
+        serial: str,
+        deck_type: str = "Stream Deck Original",
+        key_count: int = 15,
+        is_open: bool = False,
+    ) -> MagicMock:
+        deck = MagicMock()
+        deck.deck_type.return_value = deck_type
+        deck.key_count.return_value = key_count
+        deck.get_serial_number.return_value = serial
+        deck.is_open.return_value = is_open
+        deck.key_layout.return_value = (3, 5)
+        deck.id.return_value = f"id-{serial}"
+        deck.get_firmware_version.return_value = "1.0.0"
+        deck.key_image_format.return_value = {"size": (72, 72), "format": "JPEG"}
+        return deck
 
     @pytest.fixture
     def temp_config_dir(self, tmp_path: Path):
@@ -230,6 +251,82 @@ class TestStreamDeckState:
         info = state.get_deck_info()
         assert info["connected"] is False
 
+    def test_list_devices_returns_serial_type_and_key_count(self, state: StreamDeckState):
+        """Should enumerate connected deck metadata without keeping devices open."""
+        original = self._mock_deck(serial="ORIGINAL123", deck_type="Stream Deck Original")
+        plus = self._mock_deck(serial="PLUS456", deck_type="Stream Deck Plus", key_count=8)
+
+        with patch("server.DeviceManager") as mock_device_manager:
+            mock_device_manager.return_value.enumerate.return_value = [original, plus]
+
+            devices = state.list_devices()
+
+        assert devices == [
+            {
+                "serial": "ORIGINAL123",
+                "deck_type": "Stream Deck Original",
+                "key_count": 15,
+            },
+            {
+                "serial": "PLUS456",
+                "deck_type": "Stream Deck Plus",
+                "key_count": 8,
+            },
+        ]
+        original.open.assert_called_once_with()
+        original.close.assert_called_once_with()
+        plus.open.assert_called_once_with()
+        plus.close.assert_called_once_with()
+
+    def test_connect_without_serial_opens_first_deck(self, state: StreamDeckState):
+        """Default connect behavior should preserve the first enumerated deck choice."""
+        original = self._mock_deck(serial="ORIGINAL123")
+        plus = self._mock_deck(serial="PLUS456", deck_type="Stream Deck Plus", key_count=8)
+
+        with patch("server.DeviceManager") as mock_device_manager:
+            mock_device_manager.return_value.enumerate.return_value = [original, plus]
+            with patch.object(state, "_render_current_page"):
+                info = state.connect()
+
+        assert state.deck is original
+        assert info["serial"] == "ORIGINAL123"
+        original.open.assert_called_once_with()
+        plus.open.assert_not_called()
+
+    def test_connect_with_serial_opens_matching_deck(self, state: StreamDeckState):
+        """A provided serial should select that device from the enumerated decks."""
+        original = self._mock_deck(serial="ORIGINAL123")
+        plus = self._mock_deck(serial="PLUS456", deck_type="Stream Deck Plus", key_count=8)
+
+        with patch("server.DeviceManager") as mock_device_manager:
+            mock_device_manager.return_value.enumerate.return_value = [original, plus]
+            with patch.object(state, "_render_current_page"):
+                info = state.connect(serial="PLUS456")
+
+        assert state.deck is plus
+        assert info["serial"] == "PLUS456"
+        original.open.assert_called_once_with()
+        original.close.assert_called_once_with()
+        plus.open.assert_called_once_with()
+        plus.close.assert_not_called()
+
+    def test_connect_with_unknown_serial_lists_available_serials(self, state: StreamDeckState):
+        """Unknown serial errors should include available serials for self-correction."""
+        original = self._mock_deck(serial="ORIGINAL123")
+        plus = self._mock_deck(serial="PLUS456", deck_type="Stream Deck Plus", key_count=8)
+
+        with patch("server.DeviceManager") as mock_device_manager:
+            mock_device_manager.return_value.enumerate.return_value = [original, plus]
+            with pytest.raises(StreamDeckError, match="MISSING789") as exc_info:
+                state.connect(serial="MISSING789")
+
+        message = str(exc_info.value)
+        assert "ORIGINAL123" in message
+        assert "PLUS456" in message
+        assert state.deck is None
+        original.close.assert_called_once_with()
+        plus.close.assert_called_once_with()
+
     # ========================================================================
     # Button Action Tests
     # ========================================================================
@@ -307,6 +404,18 @@ class TestMCPToolHandlers:
         # This would require more setup to test properly
         # Left as placeholder for integration tests
         pass
+
+    @pytest.mark.asyncio
+    async def test_tool_schema_includes_device_listing_and_connect_serial(self):
+        """MCP schema should expose device listing and optional serial connect."""
+        tools = await list_tools()
+        tools_by_name = {tool.name: tool for tool in tools}
+
+        assert "streamdeck_list_devices" in tools_by_name
+
+        connect_schema = tools_by_name["streamdeck_connect"].inputSchema
+        assert "serial" in connect_schema["properties"]
+        assert "serial" not in connect_schema.get("required", [])
 
 
 # Run with: pytest tests/test_server.py -v
