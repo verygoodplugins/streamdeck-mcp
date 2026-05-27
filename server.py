@@ -285,8 +285,7 @@ class StreamDeckState:
                     deck.close()
                 except Exception as close_error:
                     logger.warning(
-                        "Failed to close Stream Deck after serial read error: "
-                        f"{close_error}"
+                        f"Failed to close Stream Deck after serial read error: {close_error}"
                     )
             raise StreamDeckError(f"Failed to read Stream Deck serial: {e}")
 
@@ -368,8 +367,7 @@ class StreamDeckState:
 
             if selected_deck is None:
                 raise StreamDeckError(
-                    f"No Stream Deck with serial {serial!r}. "
-                    f"Available serials: {available_serials}"
+                    f"No Stream Deck with serial {serial!r}. Available serials: {available_serials}"
                 )
 
         try:
