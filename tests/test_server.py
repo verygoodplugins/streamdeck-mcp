@@ -327,6 +327,21 @@ class TestStreamDeckState:
         original.close.assert_called_once_with()
         plus.close.assert_called_once_with()
 
+    def test_connect_with_serial_closes_match_when_setup_fails(self, state: StreamDeckState):
+        """A serial-selected deck opened during probing should be closed on setup failure."""
+        original = self._mock_deck(serial="ORIGINAL123")
+        plus = self._mock_deck(serial="PLUS456", deck_type="Stream Deck Plus", key_count=8)
+        plus.reset.side_effect = RuntimeError("reset failed")
+
+        with patch("server.DeviceManager") as mock_device_manager:
+            mock_device_manager.return_value.enumerate.return_value = [original, plus]
+            with pytest.raises(StreamDeckError, match="reset failed"):
+                state.connect(serial="PLUS456")
+
+        assert state.deck is None
+        original.close.assert_called_once_with()
+        plus.close.assert_called_once_with()
+
     # ========================================================================
     # Button Action Tests
     # ========================================================================

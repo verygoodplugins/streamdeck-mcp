@@ -391,6 +391,13 @@ class StreamDeckState:
         except Exception as e:
             self._connect_attempts += 1
             logger.error(f"Connection attempt {self._connect_attempts} failed: {e}")
+            if self.deck:
+                try:
+                    self.deck.close()
+                except Exception as close_error:
+                    logger.warning(
+                        f"Failed to close Stream Deck after connection error: {close_error}"
+                    )
             self.deck = None
 
             if self._connect_attempts >= MAX_RECONNECT_ATTEMPTS:
