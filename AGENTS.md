@@ -149,7 +149,7 @@ Stream Deck Original (15 keys):
 ```
 
 - **Image generation**: Pillow renders button images. `streamdeck_create_icon` accepts an MDI icon name (e.g. `mdi:cpu-64-bit` — ~7,400 glyphs bundled in `streamdeck_assets/`) or freeform text, plus `icon_color` / `bg_color`. Use a button's `title` field on `streamdeck_write_page` for labels so they don't collide with rendered icon art.
-- **Safe write cycle**: the Elgato desktop app keeps profiles in memory and can overwrite on-disk manifest edits when it quits. `streamdeck_write_page` raises `StreamDeckAppRunningError` when the app is running and `auto_quit_app` is not set. On macOS, pass `auto_quit_app: true` to quit before writing, then call `streamdeck_restart_app`. On Windows, quit and relaunch manually.
+- **Safe write cycle**: the Elgato desktop app keeps profiles in memory and can overwrite on-disk manifest edits when it quits. When the app is running and `auto_quit_app` is not set, `streamdeck_write_page` returns a `⚠️` warning text result (not a raised exception) and does not write — inspect the returned text to detect this. On macOS, pass `auto_quit_app: true` to quit before writing, then call `streamdeck_restart_app`. On Windows, quit and relaunch manually.
 - **Profile versions**: `ProfilesV3` is preferred when present. `ProfilesV2` is supported, but existing pages should be targeted by `directory_id` or `page_index` because V2 uses opaque directory names.
 
 ## streamdeck-designer Skill
