@@ -236,7 +236,9 @@ To audit this repo against the shared Very Good Plugins MCP standards:
 
 The original USB-direct server is preserved for backwards compatibility. It exposes direct hardware tools:
 
-`streamdeck_connect`, `streamdeck_info`, `streamdeck_set_button`, `streamdeck_set_buttons`, `streamdeck_clear_button`, `streamdeck_get_button`, `streamdeck_clear_all`, `streamdeck_set_brightness`, `streamdeck_create_page`, `streamdeck_switch_page`, `streamdeck_list_pages`, `streamdeck_delete_page`, `streamdeck_disconnect`.
+`streamdeck_list_devices`, `streamdeck_connect`, `streamdeck_info`, `streamdeck_set_button`, `streamdeck_set_buttons`, `streamdeck_clear_button`, `streamdeck_get_button`, `streamdeck_clear_all`, `streamdeck_set_brightness`, `streamdeck_create_page`, `streamdeck_switch_page`, `streamdeck_list_pages`, `streamdeck_delete_page`, `streamdeck_disconnect`.
+
+When multiple decks are attached, call `streamdeck_list_devices` first, then pass the desired `serial` to `streamdeck_connect`. Omitting `serial` preserves the legacy behavior of opening the first enumerated deck.
 
 Run it with:
 
