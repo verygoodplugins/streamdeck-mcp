@@ -174,18 +174,12 @@ PI_JS_NOISE_KEYS = {
 SDPI_TAG_PATTERN = re.compile(r"<sdpi-([a-zA-Z0-9-]+)\b([^>]*)>", re.IGNORECASE | re.DOTALL)
 HTML_ATTR_PATTERN = re.compile(r'([a-zA-Z_][\w:-]*)\s*=\s*"([^"]*)"')
 DATA_SETTING_PATTERN = re.compile(r'\bdata-setting\s*=\s*"([^"]+)"')
-SCRIPT_SRC_PATTERN = re.compile(
-    r'<script\b[^>]*\bsrc\s*=\s*"([^"]+)"[^>]*>', re.IGNORECASE
-)
+SCRIPT_SRC_PATTERN = re.compile(r'<script\b[^>]*\bsrc\s*=\s*"([^"]+)"[^>]*>', re.IGNORECASE)
 INLINE_SCRIPT_PATTERN = re.compile(
     r"<script\b(?![^>]*\bsrc\b)[^>]*>(.*?)</script>", re.IGNORECASE | re.DOTALL
 )
-JS_SETTINGS_DOT_PATTERN = re.compile(
-    r"(?:payload\??\.)?settings\??\.([A-Za-z_$][\w$]*)"
-)
-JS_SETTINGS_INDEX_PATTERN = re.compile(
-    r"settings\??\[\s*[\"']([^\"']+)[\"']\s*\]"
-)
+JS_SETTINGS_DOT_PATTERN = re.compile(r"(?:payload\??\.)?settings\??\.([A-Za-z_$][\w$]*)")
+JS_SETTINGS_INDEX_PATTERN = re.compile(r"settings\??\[\s*[\"']([^\"']+)[\"']\s*\]")
 
 FONT_PATHS = [
     "/System/Library/Fonts/Helvetica.ttc",
@@ -691,9 +685,7 @@ class ProfileManager:
         actions = manifest_actions if isinstance(manifest_actions, list) else []
         default_pi_path = self._string_or_none(manifest.get("PropertyInspectorPath"))
         simplified = [
-            self._simplify_plugin_action(action)
-            for action in actions
-            if isinstance(action, dict)
+            self._simplify_plugin_action(action) for action in actions if isinstance(action, dict)
         ]
         if include_settings_schema:
             for action in simplified:
@@ -832,9 +824,7 @@ class ProfileManager:
         for tag_match in SDPI_TAG_PATTERN.finditer(html):
             tag_name = tag_match.group(1).lower()
             attrs_text = tag_match.group(2)
-            attrs = {
-                key.lower(): value for key, value in HTML_ATTR_PATTERN.findall(attrs_text)
-            }
+            attrs = {key.lower(): value for key, value in HTML_ATTR_PATTERN.findall(attrs_text)}
             setting_key = attrs.get("setting")
             if not setting_key:
                 continue
@@ -851,15 +841,11 @@ class ProfileManager:
 
         # Legacy sdpi.css: some PIs annotate inputs with data-setting attributes.
         for setting_key in DATA_SETTING_PATTERN.findall(html):
-            fields.setdefault(
-                setting_key, {"name": setting_key, "source": "data-setting"}
-            )
+            fields.setdefault(setting_key, {"name": setting_key, "source": "data-setting"})
 
         # Styles B & C — keys live in inline and linked JS, not the HTML ids.
-        js_blobs: list[str] = [
-            match.group(1) for match in INLINE_SCRIPT_PATTERN.finditer(html)
-        ]
-        for src in SCRIPT_SRC_PATTERN.findall(html)[: PI_MAX_SCRIPT_FILES]:
+        js_blobs: list[str] = [match.group(1) for match in INLINE_SCRIPT_PATTERN.finditer(html)]
+        for src in SCRIPT_SRC_PATTERN.findall(html)[:PI_MAX_SCRIPT_FILES]:
             if "://" in src:
                 continue  # remote script — not on disk
             script_name = src.rsplit("/", 1)[-1].lower()
@@ -1094,9 +1080,7 @@ class ProfileManager:
         # Only pay the cost of reading the installed-plugin catalog when a button
         # actually asks us to synthesize a third-party plugin action from fields.
         plugin_catalog: dict[str, dict[str, Any]] | None = None
-        if any(
-            self._button_targets_third_party_plugin(button) for button in buttons
-        ):
+        if any(self._button_targets_third_party_plugin(button) for button in buttons):
             plugin_catalog = self._plugin_action_catalog()
 
         for controller_type, ctl_buttons in buttons_by_controller.items():
@@ -1852,9 +1836,7 @@ class ProfileManager:
     ) -> None:
         fields = action_meta.get("settings_fields") or []
         field_names = [
-            field["name"]
-            for field in fields
-            if isinstance(field, dict) and field.get("name")
+            field["name"] for field in fields if isinstance(field, dict) and field.get("name")
         ]
         required = [
             field["name"]
@@ -1935,16 +1917,8 @@ class ProfileManager:
                         "settings fields."
                     )
 
-        plugin_name = (
-            button.get("plugin_name")
-            or (plugin_meta or {}).get("name")
-            or plugin_uuid
-        )
-        plugin_version = (
-            button.get("plugin_version")
-            or (plugin_meta or {}).get("version")
-            or "1.0"
-        )
+        plugin_name = button.get("plugin_name") or (plugin_meta or {}).get("name") or plugin_uuid
+        plugin_version = button.get("plugin_version") or (plugin_meta or {}).get("version") or "1.0"
         action_name = button.get("action_name") or button.get("title")
         if not action_name:
             action_name = (action_meta or {}).get("name") or ""

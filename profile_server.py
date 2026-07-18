@@ -239,9 +239,7 @@ async def list_tools() -> list[Tool]:
             },
             "action_name": {
                 "type": "string",
-                "description": (
-                    "Optional action Name. Defaults to the action's manifest Name."
-                ),
+                "description": ("Optional action Name. Defaults to the action's manifest Name."),
             },
             "settings": {
                 "type": "object",
