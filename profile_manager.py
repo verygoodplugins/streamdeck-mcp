@@ -176,7 +176,7 @@ HTML_ATTR_PATTERN = re.compile(r'([a-zA-Z_][\w:-]*)\s*=\s*"([^"]*)"')
 DATA_SETTING_PATTERN = re.compile(r'\bdata-setting\s*=\s*"([^"]+)"')
 SCRIPT_SRC_PATTERN = re.compile(r'<script\b[^>]*\bsrc\s*=\s*"([^"]+)"[^>]*>', re.IGNORECASE)
 INLINE_SCRIPT_PATTERN = re.compile(
-    r"<script\b(?![^>]*\bsrc\b)[^>]*>(.*?)</script\s*>",
+    r"<script\b(?![^>]*\bsrc\b)[^>]*>(.*?)</script[^>]*>",
     re.IGNORECASE | re.DOTALL,
 )
 JS_SETTINGS_DOT_PATTERN = re.compile(r"(?:payload\??\.)?settings\??\.([A-Za-z_$][\w$]*)")
