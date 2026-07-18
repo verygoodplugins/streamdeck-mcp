@@ -63,6 +63,7 @@ For **Original / MK.2 / Neo / Mini**: fewer slots, so every slot matters more. O
 
 When the user names an integration, check what you have access to **right now** in this session:
 
+- If the user wants to use an **installed Stream Deck plugin action**, call `streamdeck_read_plugins` first to discover installed plugins and action UUIDs. This is a manifest catalog only: it does not infer property-inspector settings schemas. Prefer copying configured actions from `streamdeck_read_page` via `button.raw`; only synthesize new third-party actions when you already have a known-good `plugin_uuid`, `action_uuid`, and `settings` shape.
 - If a matching MCP is available (Hue MCP, Home Assistant MCP, Spotify MCP, OBS MCP), **use it** to enumerate the user's real devices, scenes, rooms, playlists. The goal is that when the user presses "Chill Scene" on the deck, their actual living-room Hue scene named "Chill" activates — not a placeholder.
 - If no matching MCP is available, **ask the user** for the endpoints, credentials, bridge IPs, auth tokens you need. Tell them plainly what you're going to do with each (e.g. "I'll store your Hue API key in ~/StreamDeckScripts/.env — nothing outside your machine").
 
@@ -117,6 +118,8 @@ For commands, use `streamdeck_create_action(name, command)`. It:
 For page navigation between pages in the same profile, use `action_type: "next_page"` or `action_type: "previous_page"` on the button. For opening a URL, `command="open 'https://...'"` works on macOS; Windows uses `start`.
 
 For switching to a **different profile** on press, that's not exposed as a convenience field — build the action object explicitly with `plugin_uuid: "com.elgato.streamdeck.profile"` and the profile-switch action UUID. Most decks don't need this; if you need it, check the Elgato SDK reference.
+
+For installed third-party plugins, discover action UUIDs with `streamdeck_read_plugins`. If the user already configured the action somewhere in the Stream Deck app, use `streamdeck_read_page` on that page and copy the button's `raw` action object into the new location; this preserves plugin-specific `Settings` without guessing. If you only have the plugin manifest, you still need the correct settings shape from the user, the plugin docs, or an existing configured action.
 
 No other action types exist standalone in Phase 1. In particular: there is no "call back to Claude" action yet — pressing a key fires a shell script or switches a page, nothing else. See Phase 2 in the repo roadmap if the user asks about live/dynamic behavior.
 

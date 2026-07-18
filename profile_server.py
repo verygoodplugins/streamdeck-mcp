@@ -206,29 +206,70 @@ async def list_tools() -> list[Tool]:
             "plugin_uuid": {
                 "type": "string",
                 "description": (
-                    "For advanced actions, the plugin UUID used "
-                    "when building a native action object."
+                    "For a third-party (or advanced native) action, the plugin's "
+                    "UUID, e.g. 'com.romancin.wiim' or 'one.blueshift.streamdeck.toggl'. "
+                    "Pair with action_uuid + settings. Get it from "
+                    "streamdeck_read_plugins (plugin_uuid). The write is validated "
+                    "against installed plugins."
                 ),
             },
             "plugin_name": {
                 "type": "string",
+                "description": (
+                    "Optional Plugin display name. Defaults to the installed "
+                    "plugin's manifest Name when omitted."
+                ),
             },
             "plugin_version": {
                 "type": "string",
+                "description": (
+                    "Optional Plugin version. Defaults to the installed plugin's "
+                    "manifest Version when omitted."
+                ),
             },
             "action_uuid": {
                 "type": "string",
                 "description": (
-                    "For advanced actions, the native action UUID, "
-                    "for example com.elgato.streamdeck.page.next."
+                    "The native action UUID to write. Built-in examples: "
+                    "com.elgato.streamdeck.page.next. Third-party example: "
+                    "'com.romancin.wiim.preset'. Must be one of the plugin's "
+                    "declared action UUIDs (see streamdeck_read_plugins) or the "
+                    "write is rejected."
                 ),
             },
             "action_name": {
                 "type": "string",
+                "description": (
+                    "Optional action Name. Defaults to the action's manifest Name."
+                ),
             },
             "settings": {
                 "type": "object",
-                "description": "Native action settings object.",
+                "description": (
+                    "Native action Settings object. For third-party actions, use "
+                    "the keys from that action's settings_fields "
+                    "(streamdeck_read_plugins). Missing declared fields are reported "
+                    "in the write result's 'warnings'."
+                ),
+            },
+            "states": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": (
+                    "Optional explicit per-instance States array for a plugin "
+                    "action. Omit to default to the plugin manifest's declared "
+                    "state count (empty state objects)."
+                ),
+            },
+            "action_id": {
+                "type": "string",
+                "description": (
+                    "Optional stable ActionID. A random UUID is generated when omitted."
+                ),
+            },
+            "linked_title": {
+                "type": "boolean",
+                "description": "Optional LinkedTitle flag for the native action.",
             },
             "state": {
                 "type": "integer",
@@ -251,6 +292,52 @@ async def list_tools() -> list[Tool]:
     }
 
     return [
+        Tool(
+            name="streamdeck_read_plugins",
+            description=(
+                "List installed Stream Deck plugins and their declared actions from "
+                "the user's Elgato Plugins directory, including each action's UUID, "
+                "Name, States, and — best-effort — the Settings fields its Property "
+                "Inspector expects (parsed from the action's PI HTML/JS). Use this "
+                "before authoring a third-party plugin action with "
+                "streamdeck_write_page: it gives you the plugin_uuid, action_uuid, "
+                "state_count, and settings_fields you need. Notes: some first-party "
+                "Elgato plugins (OBS, Home Assistant, Hue, Spotify, Zoom, …) ship "
+                "ELGATO-protected/binary manifests and are reported with "
+                "parse_status instead of action metadata — for those, copy a "
+                "configured button via streamdeck_read_page's raw action. "
+                "settings_fields are heuristic: a missing field is not proof it is "
+                "unused, and a listed field is not guaranteed required."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "plugin_id": {
+                        "type": "string",
+                        "description": (
+                            "Optional exact match against manifest UUID, folder stem, "
+                            "folder name, or plugin display name."
+                        ),
+                    },
+                    "include_raw_manifest": {
+                        **_scalar_or_string("boolean"),
+                        "description": (
+                            "If true, include raw_manifest for readable JSON manifests. "
+                            "Defaults to false."
+                        ),
+                    },
+                    "include_settings_schema": {
+                        **_scalar_or_string("boolean"),
+                        "description": (
+                            "If true (default), enrich each readable action with "
+                            "state_count and a best-effort settings_fields list "
+                            "inferred from its Property Inspector. Set false to skip "
+                            "PI parsing for a faster, manifest-only listing."
+                        ),
+                    },
+                },
+            },
+        ),
         Tool(
             name="streamdeck_read_profiles",
             description=(
@@ -300,11 +387,22 @@ async def list_tools() -> list[Tool]:
             name="streamdeck_write_page",
             description=(
                 "Create a new page or replace/update an existing Stream Deck desktop "
-                "page manifest. IMPORTANT: the Elgato desktop app overwrites profile "
-                "manifests from its in-memory state on quit, so writes made while the "
-                "app is running are lost. This tool refuses to write when the app is "
-                "running unless auto_quit_app=True is passed. Call streamdeck_restart_app "
-                "once your edits are complete to make the changes visible on the device."
+                "page manifest. Buttons can be page-nav (action_type), script-backed "
+                "Open actions (path, from streamdeck_create_action), the bundled MCP "
+                "dial, OR a native action for ANY installed third-party plugin — pass "
+                "plugin_uuid + action_uuid + settings (discover these with "
+                "streamdeck_read_plugins) and the tool writes the same native action "
+                "shape Stream Deck itself uses (Plugin metadata, State, States, "
+                "Settings), defaulting the States count and Plugin name/version from "
+                "the installed manifest so the button survives Elgato's "
+                "overwrite-on-quit. Validation: an unknown plugin_uuid/action_uuid "
+                "raises a clear error listing what is installed; missing settings "
+                "fields are reported non-fatally in the result's 'warnings'. "
+                "IMPORTANT: the Elgato desktop app overwrites profile manifests from "
+                "its in-memory state on quit, so writes made while the app is running "
+                "are lost. This tool refuses to write when the app is running unless "
+                "auto_quit_app=True is passed. Call streamdeck_restart_app once your "
+                "edits are complete to make the changes visible on the device."
             ),
             inputSchema={
                 "type": "object",
@@ -568,11 +666,19 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             "transparent_bg",
             "force",
             "show_title",
+            "include_raw_manifest",
         ),
         arrays=("buttons", "icons"),
     )
 
     try:
+        if name == "streamdeck_read_plugins":
+            plugins = manager.list_plugins(
+                plugin_id=arguments.get("plugin_id"),
+                include_raw_manifest=arguments.get("include_raw_manifest", False),
+            )
+            return [TextContent(type="text", text=json.dumps(plugins, indent=2))]
+
         if name == "streamdeck_read_profiles":
             profiles = manager.list_profiles()
             return [TextContent(type="text", text=json.dumps(profiles, indent=2))]

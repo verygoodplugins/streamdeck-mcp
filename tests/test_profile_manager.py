@@ -190,6 +190,294 @@ def test_read_page_returns_simplified_buttons(sample_profiles_v3: Path, tmp_path
     assert page["buttons"][0]["plugin_uuid"] == "com.elgato.streamdeck.system.open"
 
 
+def _write_plugin_manifest(plugins_dir: Path, folder_name: str, payload: dict) -> Path:
+    manifest_path = plugins_dir / folder_name / "manifest.json"
+    _write_json(manifest_path, payload)
+    return manifest_path
+
+
+@pytest.fixture
+def sample_plugins_dir(tmp_path: Path) -> Path:
+    plugins_dir = tmp_path / "Plugins"
+    _write_plugin_manifest(
+        plugins_dir,
+        "de.perdoctus.streamdeck.homeassistant.sdPlugin",
+        {
+            "UUID": "de.perdoctus.streamdeck.homeassistant",
+            "Name": "Home Assistant",
+            "Version": "3.7.1",
+            "Author": "Christoph Giesche",
+            "Category": "Home Assistant",
+            "CategoryIcon": "images/category",
+            "Description": "Control Home Assistant entities.",
+            "Icon": "images/plugin",
+            "SDKVersion": 2,
+            "URL": "https://example.test/home-assistant",
+            "Actions": [
+                {
+                    "UUID": "de.perdoctus.streamdeck.homeassistant.entity",
+                    "Name": "Entity",
+                    "Icon": "images/action",
+                    "PropertyInspectorPath": "pi.html",
+                    "States": [{"Image": "images/ha-button", "TitleAlignment": "bottom"}],
+                    "SupportedInMultiActions": True,
+                    "Controllers": ["Keypad", "Encoder"],
+                    "Encoder": {"layout": "$A0", "StackColor": "#AABBCC"},
+                },
+                {
+                    "UUID": "de.perdoctus.streamdeck.homeassistant.dual-state-entity",
+                    "Name": "Dual State Entity",
+                    "Controllers": ["Keypad"],
+                    "States": [{"Image": "images/off"}, {"Image": "images/on"}],
+                },
+            ],
+        },
+    )
+    _write_plugin_manifest(
+        plugins_dir,
+        "com.example.encoder.sdPlugin",
+        {
+            "UUID": "com.example.encoder",
+            "Name": "Encoder Only",
+            "Version": "1.0.0",
+            "Actions": [
+                {
+                    "UUID": "com.example.encoder.dial",
+                    "Name": "Dial",
+                    "Controllers": ["Encoder"],
+                    "Encoder": {"layout": "$X1"},
+                }
+            ],
+        },
+    )
+    _write_plugin_manifest(
+        plugins_dir,
+        "com.example.no-top-uuid.sdPlugin",
+        {
+            "Name": "No UUID Plugin",
+            "Version": "0.1.0",
+            "Actions": [
+                {
+                    "UUID": "com.example.no-top-uuid.action",
+                    "Name": "No UUID Action",
+                    "Controllers": ["Keypad"],
+                }
+            ],
+        },
+    )
+    protected_manifest = plugins_dir / "com.elgato.protected.sdPlugin" / "manifest.json"
+    protected_manifest.parent.mkdir(parents=True, exist_ok=True)
+    protected_manifest.write_bytes(b"ELGATO\x01\x00protected")
+    invalid_manifest = plugins_dir / "com.example.invalid.sdPlugin" / "manifest.json"
+    invalid_manifest.parent.mkdir(parents=True, exist_ok=True)
+    invalid_manifest.write_text('{"Name": "Broken",', encoding="utf-8")
+    return plugins_dir
+
+
+def test_list_plugins_reads_installed_plugin_actions(
+    sample_plugins_dir: Path,
+    sample_profiles_v3: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: sample_plugins_dir)
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    result = manager.list_plugins()
+
+    assert result["plugins_dir"] == str(sample_plugins_dir)
+    assert result["plugin_count"] == 5
+    plugins = {plugin["folder_id"]: plugin for plugin in result["plugins"]}
+
+    home_assistant = plugins["de.perdoctus.streamdeck.homeassistant"]
+    assert home_assistant["parse_status"] == "ok"
+    assert home_assistant["plugin_uuid"] == "de.perdoctus.streamdeck.homeassistant"
+    assert home_assistant["manifest_uuid"] == "de.perdoctus.streamdeck.homeassistant"
+    assert home_assistant["name"] == "Home Assistant"
+    assert home_assistant["category"] == "Home Assistant"
+    assert home_assistant["sdk_version"] == 2
+    assert "raw_manifest" not in home_assistant
+    assert home_assistant["actions"][0] == {
+        "uuid": "de.perdoctus.streamdeck.homeassistant.entity",
+        "name": "Entity",
+        "icon": "images/action",
+        "tooltip": None,
+        "controllers": ["Keypad", "Encoder"],
+        "property_inspector_path": "pi.html",
+        "states": [{"Image": "images/ha-button", "TitleAlignment": "bottom"}],
+        "encoder": {"layout": "$A0", "StackColor": "#AABBCC"},
+        "supported_in_multi_actions": True,
+        "category": None,
+        "category_icon": None,
+        "state_count": 1,
+        "settings_fields": [],
+        "settings_fields_source": "property_inspector_missing",
+    }
+
+    assert plugins["com.example.encoder"]["actions"][0]["controllers"] == ["Encoder"]
+    no_uuid = plugins["com.example.no-top-uuid"]
+    assert no_uuid["manifest_uuid"] is None
+    assert no_uuid["plugin_uuid"] == "com.example.no-top-uuid"
+
+    protected = plugins["com.elgato.protected"]
+    assert protected["parse_status"] == "binary_or_protected"
+    assert protected["actions"] == []
+    assert "ELGATO" in protected["error"]
+
+    invalid = plugins["com.example.invalid"]
+    assert invalid["parse_status"] == "invalid_json"
+    assert invalid["actions"] == []
+    assert "Invalid JSON" in invalid["error"]
+
+
+def test_list_plugins_filters_by_uuid_folder_or_name_and_can_include_raw_manifest(
+    sample_plugins_dir: Path,
+    sample_profiles_v3: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: sample_plugins_dir)
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    by_uuid = manager.list_plugins(plugin_id="de.perdoctus.streamdeck.homeassistant")
+    by_folder = manager.list_plugins(plugin_id="com.example.no-top-uuid")
+    by_name = manager.list_plugins(plugin_id="Home Assistant", include_raw_manifest=True)
+
+    assert [plugin["name"] for plugin in by_uuid["plugins"]] == ["Home Assistant"]
+    assert [plugin["name"] for plugin in by_folder["plugins"]] == ["No UUID Plugin"]
+    assert by_name["plugin_count"] == 1
+    assert by_name["plugins"][0]["raw_manifest"]["UUID"] == "de.perdoctus.streamdeck.homeassistant"
+
+
+def test_list_plugins_ignores_non_list_actions(
+    sample_profiles_v3: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plugins_dir = tmp_path / "Plugins"
+    _write_plugin_manifest(
+        plugins_dir,
+        "com.example.malformed-actions.sdPlugin",
+        {
+            "UUID": "com.example.malformed-actions",
+            "Name": "Malformed Actions",
+            "Actions": None,
+        },
+    )
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: plugins_dir)
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    try:
+        result = manager.list_plugins()
+    except TypeError as exc:
+        pytest.fail(f"non-list Actions should not break plugin discovery: {exc}")
+
+    assert result["plugin_count"] == 1
+    assert result["plugins"][0]["parse_status"] == "ok"
+    assert result["plugins"][0]["actions"] == []
+
+
+def test_plugin_catalog_supports_reusing_configured_raw_plugin_actions(
+    sample_profiles_v3: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plugins_dir = tmp_path / "Plugins"
+    _write_plugin_manifest(
+        plugins_dir,
+        "de.perdoctus.streamdeck.homeassistant.sdPlugin",
+        {
+            "UUID": "de.perdoctus.streamdeck.homeassistant",
+            "Name": "Home Assistant",
+            "Version": "3.7.1",
+            "Actions": [
+                {
+                    "UUID": "de.perdoctus.streamdeck.homeassistant.entity",
+                    "Name": "Entity",
+                    "Controllers": ["Keypad", "Encoder"],
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr("profile_manager.get_plugins_dir", lambda: plugins_dir)
+
+    page_path = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        / "manifest.json"
+    )
+    page_manifest = json.loads(page_path.read_text())
+    configured_action = {
+        "ActionID": "ha-light-action",
+        "LinkedTitle": False,
+        "Name": "Entity",
+        "Plugin": {
+            "Name": "Home Assistant",
+            "UUID": "de.perdoctus.streamdeck.homeassistant",
+            "Version": "3.7.1",
+        },
+        "Settings": {"entityId": "light.office", "mode": "toggle"},
+        "State": 0,
+        "States": [{"Title": "Office", "Image": "Images/office.png"}],
+        "UUID": "de.perdoctus.streamdeck.homeassistant.entity",
+    }
+    page_manifest["Controllers"][0]["Actions"]["2,0"] = configured_action
+    page_path.write_text(json.dumps(page_manifest))
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    plugins = manager.list_plugins(plugin_id="Home Assistant")
+    source_page = manager.read_page(
+        profile_name="Default Profile",
+        directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+    )
+    source_button = next(
+        button
+        for button in source_page["buttons"]
+        if button["plugin_uuid"] == "de.perdoctus.streamdeck.homeassistant"
+    )
+
+    assert plugins["plugins"][0]["actions"][0]["uuid"] == source_button["action_uuid"]
+
+    manager.write_page(
+        profile_name="Default Profile",
+        directory_id="CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+        buttons=[
+            {
+                "key": 4,
+                "title": "Office Copy",
+                "action": source_button["raw"],
+            }
+        ],
+    )
+
+    target_page = manager.read_page(
+        profile_name="Default Profile",
+        directory_id="CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+    )
+    copied = target_page["buttons"][0]
+    assert copied["key"] == 4
+    assert copied["position"] == "4,0"
+    assert copied["plugin_uuid"] == "de.perdoctus.streamdeck.homeassistant"
+    assert copied["action_uuid"] == "de.perdoctus.streamdeck.homeassistant.entity"
+    assert copied["settings"] == {"entityId": "light.office", "mode": "toggle"}
+    assert copied["title"] == "Office Copy"
+
+
 def test_write_page_updates_existing_v3_page(sample_profiles_v3: Path, tmp_path: Path) -> None:
     manager = ProfileManager(
         profiles_dir=sample_profiles_v3,

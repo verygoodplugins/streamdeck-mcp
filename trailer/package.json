@@ -1,0 +1,39 @@
+{
+  "name": "trailer",
+  "version": "1.0.0",
+  "description": "Remotion product trailer for streamdeck-mcp",
+  "repository": {},
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@remotion/cli": "4.0.468",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.468"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.468",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.7"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "remotion bundle",
+    "generate-audio": "node scripts/generate-audio.mjs",
+    "render": "remotion render StreamDeckTrailer out/streamdeck-mcp-trailer.mp4",
+    "still:hook": "remotion still StreamDeckTrailer out/stills/hook.png --frame=60",
+    "still:plugins": "remotion still StreamDeckTrailer out/stills/plugins.png --frame=520",
+    "still:reuse": "remotion still StreamDeckTrailer out/stills/reuse.png --frame=780",
+    "still:final": "remotion still StreamDeckTrailer out/stills/final.png --frame=1210",
+    "test": "vitest run",
+    "upgrade": "remotion upgrade",
+    "lint": "eslint src && tsc"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}

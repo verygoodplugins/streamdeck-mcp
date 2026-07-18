@@ -118,6 +118,75 @@ UUID_PATTERN = re.compile(
 )
 SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 
+# --- Property Inspector settings-schema inference ---------------------------
+# Third-party plugins declare the settings fields an action expects in their
+# Property Inspector (PI) HTML/JS, not in manifest.json. streamdeck_read_plugins
+# best-effort parses those so callers know which Settings keys an action wants.
+# Three real-world PI styles are handled (observed across OBS-adjacent, Toggl,
+# Voicemod, WiiM, and sdpi-components decks):
+#   A. sdpi-components web components — `<sdpi-textfield setting="key">`
+#      (high confidence: the setting key is a literal HTML attribute).
+#   B. classic sdpi.css + hand-written JS — keys live in `payload.settings.<key>`
+#      reads and `setSettings({ ... })` payload literals, NOT the HTML id/name
+#      (Toggl's ids deliberately differ from its setting keys).
+#   C. fully custom HTML + raw WebSocket — keys referenced as `settings.<key>`.
+# HTML id/name attributes are intentionally NOT trusted as keys.
+PI_MAX_BYTES = 512 * 1024  # skip pathological/minified bundles (e.g. sdpi-components.js)
+PI_MAX_SCRIPT_FILES = 6  # cap linked JS files scanned per PI to bound work
+# Library scripts that never declare an action's own settings keys.
+PI_LIBRARY_SCRIPTS = {
+    "sdpi-components.js",
+    "sdtools.common.js",
+    "common.js",
+    "common_pi.js",
+    "property-inspector.js",
+    "propertyinspector.js",
+    "jquery.js",
+    "jquery.min.js",
+    "utils.js",
+}
+# JS identifiers that follow `settings.` but are never real setting keys.
+PI_JS_NOISE_KEYS = {
+    "hasOwnProperty",
+    "length",
+    "forEach",
+    "map",
+    "filter",
+    "reduce",
+    "keys",
+    "values",
+    "entries",
+    "constructor",
+    "prototype",
+    "toString",
+    "call",
+    "apply",
+    "bind",
+    "then",
+    "catch",
+    "settings",
+    "payload",
+    "undefined",
+    "push",
+    "pop",
+    "slice",
+}
+SDPI_TAG_PATTERN = re.compile(r"<sdpi-([a-zA-Z0-9-]+)\b([^>]*)>", re.IGNORECASE | re.DOTALL)
+HTML_ATTR_PATTERN = re.compile(r'([a-zA-Z_][\w:-]*)\s*=\s*"([^"]*)"')
+DATA_SETTING_PATTERN = re.compile(r'\bdata-setting\s*=\s*"([^"]+)"')
+SCRIPT_SRC_PATTERN = re.compile(
+    r'<script\b[^>]*\bsrc\s*=\s*"([^"]+)"[^>]*>', re.IGNORECASE
+)
+INLINE_SCRIPT_PATTERN = re.compile(
+    r"<script\b(?![^>]*\bsrc\b)[^>]*>(.*?)</script>", re.IGNORECASE | re.DOTALL
+)
+JS_SETTINGS_DOT_PATTERN = re.compile(
+    r"(?:payload\??\.)?settings\??\.([A-Za-z_$][\w$]*)"
+)
+JS_SETTINGS_INDEX_PATTERN = re.compile(
+    r"settings\??\[\s*[\"']([^\"']+)[\"']\s*\]"
+)
+
 FONT_PATHS = [
     "/System/Library/Fonts/Helvetica.ttc",
     "/System/Library/Fonts/SFNSText.ttf",
@@ -518,6 +587,341 @@ class ProfileManager:
             )
         return profiles
 
+    def list_plugins(
+        self,
+        *,
+        plugin_id: str | None = None,
+        include_raw_manifest: bool = False,
+        include_settings_schema: bool = True,
+    ) -> dict[str, Any]:
+        """List installed Stream Deck plugins and their declared actions.
+
+        The official Elgato app may install protected/binary manifests for some
+        first-party plugins (OBS, Home Assistant, Hue, Spotify, Zoom, …). Those
+        entries are reported with diagnostics instead of aborting the whole
+        catalog, so agents can still use readable plugins.
+
+        When ``include_settings_schema`` is true (the default), each readable
+        action is enriched with ``state_count`` plus a best-effort
+        ``settings_fields`` list inferred from the action's Property Inspector
+        (see the PI-parsing note above). This tells callers which ``Settings``
+        keys a third-party action expects so they can author it with
+        ``streamdeck_write_page``. Fields are heuristic: absence of a field does
+        not prove it is unused, and a listed field is not guaranteed required.
+        """
+
+        plugins_dir = get_plugins_dir()
+        plugins: list[dict[str, Any]] = []
+
+        if plugins_dir.exists():
+            for plugin_dir in sorted(plugins_dir.glob("*.sdPlugin"), key=lambda p: p.name.lower()):
+                plugin = self._read_plugin_manifest(
+                    plugin_dir,
+                    include_raw_manifest=include_raw_manifest,
+                    include_settings_schema=include_settings_schema,
+                )
+                if self._matches_plugin_filter(plugin, plugin_id):
+                    plugins.append(plugin)
+
+        return {
+            "plugins_dir": str(plugins_dir),
+            "plugin_count": len(plugins),
+            "plugins": plugins,
+        }
+
+    def _read_plugin_manifest(
+        self,
+        plugin_dir: Path,
+        *,
+        include_raw_manifest: bool,
+        include_settings_schema: bool = True,
+    ) -> dict[str, Any]:
+        folder_id = self._plugin_folder_id(plugin_dir)
+        manifest_path = plugin_dir / "manifest.json"
+        base: dict[str, Any] = {
+            "folder_name": plugin_dir.name,
+            "folder_id": folder_id,
+            "plugin_uuid": folder_id,
+            "manifest_uuid": None,
+            "name": None,
+            "version": None,
+            "author": None,
+            "category": None,
+            "sdk_version": None,
+            "description": None,
+            "url": None,
+            "manifest_path": str(manifest_path),
+            "parse_status": "ok",
+            "actions": [],
+        }
+
+        try:
+            raw = manifest_path.read_bytes()
+        except OSError as exc:
+            base["parse_status"] = "unreadable"
+            base["error"] = f"Could not read manifest: {exc}"
+            return base
+
+        if raw.startswith(b"ELGATO"):
+            base["parse_status"] = "binary_or_protected"
+            base["error"] = "ELGATO protected/binary manifest; action metadata unavailable."
+            return base
+
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            base["parse_status"] = "binary_or_protected"
+            base["error"] = "Manifest is binary or protected; action metadata unavailable."
+            return base
+
+        try:
+            manifest = json.loads(text)
+        except json.JSONDecodeError as exc:
+            base["parse_status"] = "invalid_json"
+            base["error"] = f"Invalid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}."
+            return base
+
+        if not isinstance(manifest, dict):
+            base["parse_status"] = "invalid_json"
+            base["error"] = "Invalid JSON: manifest root must be an object."
+            return base
+
+        manifest_uuid = self._string_or_none(manifest.get("UUID"))
+        manifest_actions = manifest.get("Actions")
+        actions = manifest_actions if isinstance(manifest_actions, list) else []
+        default_pi_path = self._string_or_none(manifest.get("PropertyInspectorPath"))
+        simplified = [
+            self._simplify_plugin_action(action)
+            for action in actions
+            if isinstance(action, dict)
+        ]
+        if include_settings_schema:
+            for action in simplified:
+                self._enrich_action_settings_schema(action, plugin_dir, default_pi_path)
+        base.update(
+            {
+                "plugin_uuid": manifest_uuid or folder_id,
+                "manifest_uuid": manifest_uuid,
+                "name": self._string_or_none(manifest.get("Name")),
+                "version": self._string_or_none(manifest.get("Version")),
+                "author": self._string_or_none(manifest.get("Author")),
+                "category": self._string_or_none(manifest.get("Category")),
+                "sdk_version": manifest.get("SDKVersion"),
+                "description": self._string_or_none(manifest.get("Description")),
+                "url": self._string_or_none(manifest.get("URL")),
+                "property_inspector_path": default_pi_path,
+                "actions": simplified,
+            }
+        )
+        if include_raw_manifest:
+            base["raw_manifest"] = manifest
+        return base
+
+    @staticmethod
+    def _plugin_folder_id(plugin_dir: Path) -> str:
+        name = plugin_dir.name
+        if name.lower().endswith(".sdplugin"):
+            return name[: -len(".sdPlugin")]
+        return plugin_dir.stem
+
+    @staticmethod
+    def _string_or_none(value: Any) -> str | None:
+        if isinstance(value, str):
+            return value
+        return None
+
+    @staticmethod
+    def _list_or_empty(value: Any) -> list[Any]:
+        if isinstance(value, list):
+            return copy.deepcopy(value)
+        return []
+
+    @classmethod
+    def _simplify_plugin_action(cls, action: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "uuid": cls._string_or_none(action.get("UUID")),
+            "name": cls._string_or_none(action.get("Name")),
+            "icon": cls._string_or_none(action.get("Icon")),
+            "tooltip": cls._string_or_none(action.get("Tooltip")),
+            "controllers": cls._list_or_empty(action.get("Controllers")),
+            "property_inspector_path": cls._string_or_none(action.get("PropertyInspectorPath")),
+            "states": cls._list_or_empty(action.get("States")),
+            "encoder": copy.deepcopy(action.get("Encoder"))
+            if isinstance(action.get("Encoder"), dict)
+            else None,
+            "supported_in_multi_actions": action.get("SupportedInMultiActions"),
+            "category": cls._string_or_none(action.get("Category")),
+            "category_icon": cls._string_or_none(action.get("CategoryIcon")),
+        }
+
+    @classmethod
+    def _enrich_action_settings_schema(
+        cls,
+        action: dict[str, Any],
+        plugin_dir: Path,
+        default_pi_path: str | None,
+    ) -> None:
+        """Add ``state_count`` and best-effort ``settings_fields`` to a simplified
+        action, parsed from its Property Inspector. Mutates ``action`` in place.
+
+        ``settings_fields_source`` records how the inference went so callers know
+        how much to trust the list:
+        - ``property_inspector``: PI file read and at least one field inferred.
+        - ``property_inspector_empty``: PI read but no fields could be inferred.
+        - ``property_inspector_missing``: PI declared but the file is absent.
+        - ``property_inspector_unreadable``: PI present but could not be read.
+        - ``none``: the action declares no Property Inspector.
+        """
+
+        states = action.get("states")
+        action["state_count"] = len(states) if isinstance(states, list) else 0
+
+        pi_rel = action.get("property_inspector_path") or default_pi_path
+        if not pi_rel:
+            action["settings_fields"] = []
+            action["settings_fields_source"] = "none"
+            return
+
+        pi_path = cls._resolve_plugin_relative_path(plugin_dir, pi_rel)
+        if pi_path is None or not pi_path.is_file():
+            action["settings_fields"] = []
+            action["settings_fields_source"] = "property_inspector_missing"
+            return
+
+        try:
+            fields, source = cls._infer_settings_fields(pi_path, plugin_dir)
+        except OSError:
+            action["settings_fields"] = []
+            action["settings_fields_source"] = "property_inspector_unreadable"
+            return
+
+        action["settings_fields"] = fields
+        action["settings_fields_source"] = source
+
+    @staticmethod
+    def _resolve_plugin_relative_path(plugin_dir: Path, rel: str) -> Path | None:
+        """Resolve a manifest-relative path, refusing to escape the plugin dir."""
+
+        cleaned = rel.strip().lstrip("/").replace("\\", "/")
+        if not cleaned:
+            return None
+        candidate = (plugin_dir / cleaned).resolve()
+        try:
+            candidate.relative_to(plugin_dir.resolve())
+        except ValueError:
+            return None
+        return candidate
+
+    @classmethod
+    def _infer_settings_fields(
+        cls, pi_path: Path, plugin_dir: Path
+    ) -> tuple[list[dict[str, Any]], str]:
+        """Parse a Property Inspector HTML file (and its local scripts) into a
+        list of ``{name, source, type?, label?, required?}`` setting descriptors.
+
+        Best-effort and heuristic — see the PI-parsing note at module scope.
+        """
+
+        html = cls._read_text_capped(pi_path)
+        if html is None:
+            return [], "property_inspector_unreadable"
+
+        fields: dict[str, dict[str, Any]] = {}
+
+        # Style A — sdpi-components: the setting key is a literal HTML attribute.
+        for tag_match in SDPI_TAG_PATTERN.finditer(html):
+            tag_name = tag_match.group(1).lower()
+            attrs_text = tag_match.group(2)
+            attrs = {
+                key.lower(): value for key, value in HTML_ATTR_PATTERN.findall(attrs_text)
+            }
+            setting_key = attrs.get("setting")
+            if not setting_key:
+                continue
+            entry: dict[str, Any] = {
+                "name": setting_key,
+                "source": "sdpi",
+                "type": f"sdpi-{tag_name}",
+            }
+            if attrs.get("label"):
+                entry["label"] = attrs["label"]
+            if re.search(r"(?:^|\s)required(?:\s|=|$)", attrs_text, re.IGNORECASE):
+                entry["required"] = True
+            fields.setdefault(setting_key, entry)
+
+        # Legacy sdpi.css: some PIs annotate inputs with data-setting attributes.
+        for setting_key in DATA_SETTING_PATTERN.findall(html):
+            fields.setdefault(
+                setting_key, {"name": setting_key, "source": "data-setting"}
+            )
+
+        # Styles B & C — keys live in inline and linked JS, not the HTML ids.
+        js_blobs: list[str] = [
+            match.group(1) for match in INLINE_SCRIPT_PATTERN.finditer(html)
+        ]
+        for src in SCRIPT_SRC_PATTERN.findall(html)[: PI_MAX_SCRIPT_FILES]:
+            if "://" in src:
+                continue  # remote script — not on disk
+            script_name = src.rsplit("/", 1)[-1].lower()
+            if script_name in PI_LIBRARY_SCRIPTS:
+                continue
+            script_path = cls._resolve_plugin_relative_path(plugin_dir, src)
+            if script_path is None or not script_path.is_file():
+                # PI paths are often relative to the PI file, not the plugin root.
+                script_path = (pi_path.parent / src.lstrip("/")).resolve()
+                try:
+                    script_path.relative_to(plugin_dir.resolve())
+                except ValueError:
+                    continue
+                if not script_path.is_file():
+                    continue
+            script_text = cls._read_text_capped(script_path)
+            if script_text:
+                js_blobs.append(script_text)
+
+        for blob in js_blobs:
+            for key in JS_SETTINGS_DOT_PATTERN.findall(blob):
+                if key in PI_JS_NOISE_KEYS:
+                    continue
+                fields.setdefault(key, {"name": key, "source": "javascript"})
+            for key in JS_SETTINGS_INDEX_PATTERN.findall(blob):
+                if key in PI_JS_NOISE_KEYS:
+                    continue
+                fields.setdefault(key, {"name": key, "source": "javascript"})
+
+        ordered = [fields[name] for name in sorted(fields)]
+        source = "property_inspector" if ordered else "property_inspector_empty"
+        return ordered, source
+
+    @staticmethod
+    def _read_text_capped(path: Path) -> str | None:
+        """Read up to ``PI_MAX_BYTES`` of UTF-8 text, or None if binary/oversized."""
+
+        try:
+            if path.stat().st_size > PI_MAX_BYTES:
+                return None
+            return path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return None
+
+    @staticmethod
+    def _matches_plugin_filter(plugin: dict[str, Any], plugin_id: str | None) -> bool:
+        if not plugin_id:
+            return True
+        target = plugin_id.strip().lower()
+        if not target:
+            return True
+        candidates = (
+            plugin.get("manifest_uuid"),
+            plugin.get("plugin_uuid"),
+            plugin.get("folder_id"),
+            plugin.get("folder_name"),
+            plugin.get("name"),
+        )
+        return any(
+            isinstance(candidate, str) and candidate.lower() == target for candidate in candidates
+        )
+
     def read_page(
         self,
         *,
@@ -683,6 +1087,18 @@ class ProfileManager:
         if self._any_button_needs_mcp_plugin(buttons_by_controller):
             plugin_install_report = ensure_mcp_plugin_installed()
 
+        # Non-fatal validation notes surfaced back to the caller (e.g. a
+        # third-party action written without the settings its Property Inspector
+        # expects). Hard problems — an unknown plugin/action UUID — raise instead.
+        warnings: list[str] = []
+        # Only pay the cost of reading the installed-plugin catalog when a button
+        # actually asks us to synthesize a third-party plugin action from fields.
+        plugin_catalog: dict[str, dict[str, Any]] | None = None
+        if any(
+            self._button_targets_third_party_plugin(button) for button in buttons
+        ):
+            plugin_catalog = self._plugin_action_catalog()
+
         for controller_type, ctl_buttons in buttons_by_controller.items():
             cols, rows = self._resolve_layout(profile_manifest, page_manifest, controller_type)
             if cols <= 0 or rows <= 0:
@@ -694,7 +1110,11 @@ class ProfileManager:
             for button in ctl_buttons:
                 position = self._resolve_button_position(button, columns=cols, rows=rows)
                 existing[position] = self._materialize_action(
-                    button, page_dir, controller_type=controller_type
+                    button,
+                    page_dir,
+                    controller_type=controller_type,
+                    plugin_catalog=plugin_catalog,
+                    warnings=warnings,
                 )
             controller["Actions"] = existing or None
             layouts_out[controller_type.lower()] = {"columns": cols, "rows": rows}
@@ -742,6 +1162,7 @@ class ProfileManager:
             "manifest_path": str(page_dir / "manifest.json"),
             "app_quit": app_stop_report,
             "mcp_plugin_install": plugin_install_report,
+            "warnings": warnings,
         }
 
     def create_icon(
@@ -1243,10 +1664,17 @@ class ProfileManager:
         page_dir: Path,
         *,
         controller_type: str = KEYPAD,
+        plugin_catalog: dict[str, dict[str, Any]] | None = None,
+        warnings: list[str] | None = None,
     ) -> dict[str, Any]:
         raw_action = button.get("action")
         if raw_action is None:
-            action = self._build_action_from_fields(button, controller_type=controller_type)
+            action = self._build_action_from_fields(
+                button,
+                controller_type=controller_type,
+                plugin_catalog=plugin_catalog,
+                warnings=warnings,
+            )
         elif isinstance(raw_action, str):
             try:
                 action = json.loads(raw_action)
@@ -1322,7 +1750,12 @@ class ProfileManager:
         return action
 
     def _build_action_from_fields(
-        self, button: dict[str, Any], *, controller_type: str = KEYPAD
+        self,
+        button: dict[str, Any],
+        *,
+        controller_type: str = KEYPAD,
+        plugin_catalog: dict[str, dict[str, Any]] | None = None,
+        warnings: list[str] | None = None,
     ) -> dict[str, Any]:
         encoder_layout = button.get("encoder_layout")
         if encoder_layout is not None and controller_type != ENCODER:
@@ -1347,20 +1780,9 @@ class ProfileManager:
         plugin_uuid = button.get("plugin_uuid")
         action_uuid = button.get("action_uuid")
         if plugin_uuid and action_uuid:
-            return {
-                "ActionID": button.get("action_id", str(uuid.uuid4())),
-                "LinkedTitle": bool(button.get("linked_title", False)),
-                "Name": button.get("action_name", button.get("title", "")),
-                "Plugin": {
-                    "Name": button.get("plugin_name", plugin_uuid),
-                    "UUID": plugin_uuid,
-                    "Version": button.get("plugin_version", "1.0"),
-                },
-                "Settings": copy.deepcopy(button.get("settings", {})),
-                "State": int(button.get("state", 0)),
-                "States": copy.deepcopy(button.get("states", [{}])),
-                "UUID": action_uuid,
-            }
+            return self._build_third_party_action(
+                button, plugin_catalog=plugin_catalog, warnings=warnings
+            )
 
         # Encoder/dial buttons without any explicit action fields fall back to the
         # bundled streamdeck-mcp dial plugin, which is the only action shell that
@@ -1372,6 +1794,194 @@ class ProfileManager:
             "Button needs either 'action', 'path', 'action_type', "
             "or explicit plugin/action UUID fields."
         )
+
+    @staticmethod
+    def _button_targets_third_party_plugin(button: dict[str, Any]) -> bool:
+        """True when a button asks us to synthesize a native action from a
+        plugin_uuid + action_uuid pair (rather than copy a raw ``action`` or use
+        a convenience path/action_type). These are the only buttons that need the
+        installed-plugin catalog for validation and metadata defaults.
+        """
+
+        if button.get("action") is not None:
+            return False
+        if button.get("path") or button.get("action_type"):
+            return False
+        return bool(button.get("plugin_uuid")) and bool(button.get("action_uuid"))
+
+    def _plugin_action_catalog(self) -> dict[str, dict[str, Any]]:
+        """Index installed plugins by every UUID/folder id they answer to.
+
+        Returns ``{}`` when the plugins directory is missing or unreadable so
+        callers can distinguish "not installed" (non-empty catalog, UUID absent)
+        from "cannot verify" (empty catalog).
+        """
+
+        try:
+            listing = self.list_plugins(include_settings_schema=True)
+        except (ProfileManagerError, OSError):
+            return {}
+        catalog: dict[str, dict[str, Any]] = {}
+        for plugin in listing.get("plugins", []):
+            for key in (
+                plugin.get("plugin_uuid"),
+                plugin.get("manifest_uuid"),
+                plugin.get("folder_id"),
+            ):
+                if isinstance(key, str) and key:
+                    catalog.setdefault(key.lower(), plugin)
+        return catalog
+
+    @staticmethod
+    def _match_plugin_action(
+        plugin_meta: dict[str, Any], action_uuid: str
+    ) -> dict[str, Any] | None:
+        target = action_uuid.strip().lower()
+        for action in plugin_meta.get("actions") or []:
+            uuid_val = action.get("uuid")
+            if isinstance(uuid_val, str) and uuid_val.lower() == target:
+                return action
+        return None
+
+    @staticmethod
+    def _warn_missing_settings(
+        action_meta: dict[str, Any],
+        settings: dict[str, Any],
+        action_uuid: str,
+        warnings: list[str],
+    ) -> None:
+        fields = action_meta.get("settings_fields") or []
+        field_names = [
+            field["name"]
+            for field in fields
+            if isinstance(field, dict) and field.get("name")
+        ]
+        required = [
+            field["name"]
+            for field in fields
+            if isinstance(field, dict) and field.get("required") and field.get("name")
+        ]
+        provided = set(settings.keys()) if isinstance(settings, dict) else set()
+        missing_required = [name for name in required if name not in provided]
+        if missing_required:
+            warnings.append(
+                f"Action '{action_uuid}' expects required settings "
+                f"{missing_required} but they were not provided "
+                f"(settings keys given: {sorted(provided)})."
+            )
+        elif field_names and not provided:
+            warnings.append(
+                f"Action '{action_uuid}' declares settings fields "
+                f"{sorted(set(field_names))} but no settings were provided. The "
+                "button may render but stay inert until configured — call "
+                "streamdeck_read_plugins for each field's details."
+            )
+
+    def _build_third_party_action(
+        self,
+        button: dict[str, Any],
+        *,
+        plugin_catalog: dict[str, dict[str, Any]] | None = None,
+        warnings: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Build a native action object for an arbitrary installed plugin.
+
+        Validates the plugin_uuid/action_uuid against the installed catalog when
+        one is available, defaults Plugin metadata and the per-instance ``States``
+        array from the plugin manifest, and copies the caller's ``settings`` in
+        the same shape Stream Deck itself writes so the action survives the Elgato
+        app's overwrite-on-quit.
+        """
+
+        plugin_uuid = button["plugin_uuid"]
+        action_uuid = button["action_uuid"]
+
+        plugin_meta: dict[str, Any] | None = None
+        action_meta: dict[str, Any] | None = None
+        if plugin_catalog is not None:
+            plugin_meta = plugin_catalog.get(plugin_uuid.strip().lower())
+            if plugin_meta is None:
+                if plugin_catalog:
+                    available = sorted(
+                        {
+                            plugin.get("plugin_uuid")
+                            for plugin in plugin_catalog.values()
+                            if plugin.get("plugin_uuid")
+                        }
+                    )
+                    raise ProfileValidationError(
+                        f"plugin_uuid '{plugin_uuid}' is not installed. Installed "
+                        f"plugin UUIDs: {available}. Call streamdeck_read_plugins "
+                        "to see installed plugins and their action UUIDs."
+                    )
+                if warnings is not None:
+                    warnings.append(
+                        f"Could not verify plugin_uuid '{plugin_uuid}': no readable "
+                        "plugins were found in the Elgato Plugins directory. Writing "
+                        "the action unverified."
+                    )
+            else:
+                action_meta = self._match_plugin_action(plugin_meta, action_uuid)
+                if action_meta is None:
+                    declared = [
+                        action.get("uuid")
+                        for action in plugin_meta.get("actions") or []
+                        if action.get("uuid")
+                    ]
+                    raise ProfileValidationError(
+                        f"action_uuid '{action_uuid}' is not declared by plugin "
+                        f"'{plugin_uuid}'. Declared actions: {declared}. Call "
+                        "streamdeck_read_plugins for each action's UUID and "
+                        "settings fields."
+                    )
+
+        plugin_name = (
+            button.get("plugin_name")
+            or (plugin_meta or {}).get("name")
+            or plugin_uuid
+        )
+        plugin_version = (
+            button.get("plugin_version")
+            or (plugin_meta or {}).get("version")
+            or "1.0"
+        )
+        action_name = button.get("action_name") or button.get("title")
+        if not action_name:
+            action_name = (action_meta or {}).get("name") or ""
+
+        # Default the per-instance States array to the manifest-declared count so
+        # multi-state actions (toggles, dual-state entities) round-trip cleanly.
+        if button.get("states") is not None:
+            states = copy.deepcopy(button["states"])
+        else:
+            declared_states = (action_meta or {}).get("states")
+            if isinstance(declared_states, list) and declared_states:
+                states = [{} for _ in declared_states]
+            else:
+                states = [{}]
+
+        settings = copy.deepcopy(button.get("settings", {}))
+        if warnings is not None and action_meta is not None:
+            self._warn_missing_settings(action_meta, settings, action_uuid, warnings)
+
+        state_value = int(button.get("state", 0))
+        if states:
+            state_value = min(max(state_value, 0), len(states) - 1)
+
+        return {
+            "ActionID": button.get("action_id", str(uuid.uuid4())),
+            "LinkedTitle": bool(button.get("linked_title", False)),
+            "Name": action_name,
+            "Plugin": {
+                "Name": plugin_name,
+                "UUID": plugin_uuid,
+                "Version": plugin_version,
+            },
+            "Settings": settings,
+            "State": state_value,
+            "States": states,
+            "UUID": action_uuid,
+        }
 
     @staticmethod
     def _any_button_needs_mcp_plugin(
