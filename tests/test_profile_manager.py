@@ -599,6 +599,76 @@ def test_find_actions_absolutizes_existing_page_assets(
     assert (target_dir / target_image).exists()
 
 
+def test_find_actions_skips_corrupt_profile_and_continues(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    bad_profile = sample_profiles_v3 / "BROKEN.sdProfile"
+    bad_profile.mkdir()
+    (bad_profile / "manifest.json").write_text("{not-json")
+
+    page_path = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        / "manifest.json"
+    )
+    page_manifest = json.loads(page_path.read_text())
+    page_manifest["Controllers"][0]["Actions"]["0,1"] = {
+        "ActionID": "alive",
+        "Name": "Open",
+        "Plugin": {
+            "Name": "Open",
+            "UUID": "com.elgato.streamdeck.system.open",
+            "Version": "1.0",
+        },
+        "Settings": {},
+        "State": 0,
+        "States": [{"Title": "Alive"}],
+        "UUID": "com.elgato.streamdeck.system.open",
+    }
+    page_path.write_text(json.dumps(page_manifest))
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    result = manager.find_actions(query="alive")
+    assert result["count"] >= 1
+    assert any(hit["title"] == "Alive" for hit in result["actions"])
+
+
+def test_resolve_layout_tolerates_malformed_action_keys(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    profile_manifest = {
+        "Device": {"Model": "UNKNOWN-MODEL"},
+        "Name": "Weird",
+        "Version": "3.0",
+    }
+    page_manifest = {
+        "Controllers": [
+            {
+                "Type": "Keypad",
+                "Actions": {
+                    "0,0": {"UUID": "x"},
+                    "bad-slot": {"UUID": "y"},
+                    "3,2": {"UUID": "z"},
+                },
+            }
+        ]
+    }
+    cols, rows = manager._resolve_layout(profile_manifest, page_manifest, "Keypad")
+    assert cols == 4
+    assert rows == 3
+
+
 def test_find_actions_skips_corrupt_page_and_continues(
     sample_profiles_v3: Path, tmp_path: Path
 ) -> None:

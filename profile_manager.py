@@ -1026,9 +1026,13 @@ class ProfileManager:
             profiles_to_scan = []
             if self.profiles_dir.exists():
                 for profile_dir in sorted(self.profiles_dir.glob("*.sdProfile")):
-                    profiles_to_scan.append(
-                        (profile_dir, _load_json(profile_dir / "manifest.json"))
-                    )
+                    try:
+                        profiles_to_scan.append(
+                            (profile_dir, _load_json(profile_dir / "manifest.json"))
+                        )
+                    except ProfileManagerError:
+                        # One corrupt/half-imported profile must not abort the search.
+                        continue
 
         matches: list[dict[str, Any]] = []
         truncated = False
@@ -1801,9 +1805,16 @@ class ProfileManager:
 
         if page_manifest:
             actions = _controller_actions(page_manifest, controller_type)
-            if actions:
-                cols = max(int(position.split(",")[0]) for position in actions) + 1
-                rows = max(int(position.split(",")[1]) for position in actions) + 1
+            positions: list[tuple[int, int]] = []
+            for position in actions:
+                try:
+                    col_s, row_s = str(position).split(",")
+                    positions.append((int(col_s), int(row_s)))
+                except (TypeError, ValueError):
+                    continue
+            if positions:
+                cols = max(col for col, _row in positions) + 1
+                rows = max(row for _col, row in positions) + 1
                 if cols > 0 and rows > 0:
                     return cols, rows
 
