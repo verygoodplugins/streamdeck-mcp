@@ -940,6 +940,8 @@ class ProfileManager:
             layouts[controller_type.lower()] = {"columns": cols, "rows": rows}
 
             actions = controller.get("Actions") or {}
+            if not isinstance(actions, dict):
+                continue
             for position, action in sorted(
                 actions.items(),
                 key=lambda item: self._position_sort_key(item[0]),
@@ -1076,6 +1078,8 @@ class ProfileManager:
                         profile_manifest, page_manifest, controller_type
                     )
                     actions = ctrl.get("Actions") or {}
+                    if not isinstance(actions, dict):
+                        continue
                     for position, action in sorted(
                         actions.items(),
                         key=lambda item: self._position_sort_key(item[0]),
@@ -2471,12 +2475,29 @@ class ProfileManager:
         if not isinstance(value, str) or not value.strip():
             return None
         path = Path(value).expanduser()
+        page_root = page_dir.resolve()
+        images_root = (page_dir / "Images").resolve()
+
         if path.is_absolute():
-            return str(path.resolve()) if path.exists() else None
+            if not path.exists():
+                return None
+            resolved = path.resolve()
+            try:
+                resolved.relative_to(images_root)
+            except ValueError:
+                return None
+            return str(resolved)
+
         candidate = (page_dir / value).resolve()
-        if candidate.exists():
-            return str(candidate)
-        return None
+        if not candidate.exists():
+            return None
+        try:
+            candidate.relative_to(page_root)
+            candidate.relative_to(images_root)
+        except ValueError:
+            # Reject ../ escapes and anything outside the page Images/ tree.
+            return None
+        return str(candidate)
 
     def _ensure_action_assets_on_page(self, action: dict[str, Any], page_dir: Path) -> None:
         """Copy absolute (or foreign) asset paths into the destination page Images/."""
