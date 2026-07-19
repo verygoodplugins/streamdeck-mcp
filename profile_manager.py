@@ -1116,7 +1116,9 @@ class ProfileManager:
                             break
 
                         seen.add(dedupe_key)
-                        paste_action = copy.deepcopy(action)
+                        paste_action = self._absolutize_action_assets(
+                            copy.deepcopy(action), page_ref.directory_path
+                        )
                         paste_action["ActionID"] = str(uuid.uuid4())
                         matches.append(
                             {
@@ -1653,36 +1655,36 @@ class ProfileManager:
             if not manifest_path.exists():
                 continue
             used.add(directory_id)
-            page_refs.append(
-                self._build_page_ref(
-                    page_index=page_index,
-                    directory_id=directory_id,
-                    page_uuid=str(page_uuid).lower(),
-                    manifest_path=manifest_path,
-                    version=str(profile_manifest.get("Version", "unknown")),
-                    mapping="page-uuid",
-                    is_default=is_default,
-                    is_current=_normalize_uuid(str(page_uuid))
-                    == _normalize_uuid(str(pages.get("Current", ""))),
-                )
+            page_ref = self._try_build_page_ref(
+                page_index=page_index,
+                directory_id=directory_id,
+                page_uuid=str(page_uuid).lower(),
+                manifest_path=manifest_path,
+                version=str(profile_manifest.get("Version", "unknown")),
+                mapping="page-uuid",
+                is_default=is_default,
+                is_current=_normalize_uuid(str(page_uuid))
+                == _normalize_uuid(str(pages.get("Current", ""))),
             )
+            if page_ref is not None:
+                page_refs.append(page_ref)
 
         for manifest_path in sorted(profiles_path.glob("*/manifest.json")):
             directory_id = manifest_path.parent.name.upper()
             if directory_id in used:
                 continue
-            page_refs.append(
-                self._build_page_ref(
-                    page_index=len(page_refs),
-                    directory_id=directory_id,
-                    page_uuid=directory_id.lower() if _looks_like_uuid(directory_id) else None,
-                    manifest_path=manifest_path,
-                    version=str(profile_manifest.get("Version", "unknown")),
-                    mapping="unreferenced",
-                    is_default=False,
-                    is_current=False,
-                )
+            page_ref = self._try_build_page_ref(
+                page_index=len(page_refs),
+                directory_id=directory_id,
+                page_uuid=directory_id.lower() if _looks_like_uuid(directory_id) else None,
+                manifest_path=manifest_path,
+                version=str(profile_manifest.get("Version", "unknown")),
+                mapping="unreferenced",
+                is_default=False,
+                is_current=False,
             )
+            if page_ref is not None:
+                page_refs.append(page_ref)
 
         return page_refs
 
@@ -1693,19 +1695,47 @@ class ProfileManager:
             key=lambda path: path.name.lower(),
         )
         for page_index, page_dir in enumerate(entries):
-            page_refs.append(
-                self._build_page_ref(
-                    page_index=page_index,
-                    directory_id=page_dir.name,
-                    page_uuid=None,
-                    manifest_path=page_dir / "manifest.json",
-                    version=str(profile_manifest.get("Version", "unknown")),
-                    mapping="directory-order",
-                    is_default=False,
-                    is_current=False,
-                )
+            page_ref = self._try_build_page_ref(
+                page_index=page_index,
+                directory_id=page_dir.name,
+                page_uuid=None,
+                manifest_path=page_dir / "manifest.json",
+                version=str(profile_manifest.get("Version", "unknown")),
+                mapping="directory-order",
+                is_default=False,
+                is_current=False,
             )
+            if page_ref is not None:
+                page_refs.append(page_ref)
         return page_refs
+
+    def _try_build_page_ref(
+        self,
+        *,
+        page_index: int,
+        directory_id: str,
+        page_uuid: str | None,
+        manifest_path: Path,
+        version: str,
+        mapping: str,
+        is_default: bool,
+        is_current: bool,
+    ) -> PageRef | None:
+        """Build a PageRef, skipping missing/corrupt page manifests."""
+
+        try:
+            return self._build_page_ref(
+                page_index=page_index,
+                directory_id=directory_id,
+                page_uuid=page_uuid,
+                manifest_path=manifest_path,
+                version=version,
+                mapping=mapping,
+                is_default=is_default,
+                is_current=is_current,
+            )
+        except ProfileManagerError:
+            return None
 
     def _build_page_ref(
         self,
@@ -1839,6 +1869,12 @@ class ProfileManager:
         else:
             raise ProfileValidationError("Button action must be an object or JSON string.")
 
+        # Raw/pasted actions may be reused across multiple slots; always mint a
+        # fresh ActionID so multi-copy pastes (including reuse of one find_actions
+        # hit) never collide on the destination page.
+        if raw_action is not None:
+            action["ActionID"] = str(uuid.uuid4())
+
         states = copy.deepcopy(action.get("States") or [{}])
         state_index = min(max(int(action.get("State", 0)), 0), max(len(states) - 1, 0))
         state_data = copy.deepcopy(states[state_index] or {})
@@ -1901,6 +1937,7 @@ class ProfileManager:
 
         states[state_index] = state_data
         action["States"] = states
+        self._ensure_action_assets_on_page(action, page_dir)
         return action
 
     def _build_action_from_fields(
@@ -2275,9 +2312,80 @@ class ProfileManager:
 
         return f"Images/{target_name}"
 
+    def _absolutize_action_assets(self, action: dict[str, Any], page_dir: Path) -> dict[str, Any]:
+        """Rewrite page-local Images/ paths to absolute source paths for paste reuse."""
+
+        for state in action.get("States") or []:
+            if not isinstance(state, dict):
+                continue
+            resolved = self._resolve_page_local_asset(state.get("Image"), page_dir)
+            if resolved is not None:
+                state["Image"] = resolved
+
+        encoder = action.get("Encoder")
+        if isinstance(encoder, dict):
+            for field in ("Icon", "background"):
+                resolved = self._resolve_page_local_asset(encoder.get(field), page_dir)
+                if resolved is not None:
+                    encoder[field] = resolved
+        return action
+
+    def _resolve_page_local_asset(self, value: Any, page_dir: Path) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        path = Path(value).expanduser()
+        if path.is_absolute():
+            return str(path.resolve()) if path.exists() else None
+        candidate = (page_dir / value).resolve()
+        if candidate.exists():
+            return str(candidate)
+        return None
+
+    def _ensure_action_assets_on_page(self, action: dict[str, Any], page_dir: Path) -> None:
+        """Copy absolute (or foreign) asset paths into the destination page Images/."""
+
+        for state in action.get("States") or []:
+            if not isinstance(state, dict):
+                continue
+            relocated = self._ensure_asset_on_page(state.get("Image"), page_dir)
+            if relocated is not None:
+                state["Image"] = relocated
+
+        encoder = action.get("Encoder")
+        if isinstance(encoder, dict):
+            for field in ("Icon", "background"):
+                relocated = self._ensure_asset_on_page(encoder.get(field), page_dir)
+                if relocated is not None:
+                    encoder[field] = relocated
+
+    def _ensure_asset_on_page(self, value: Any, page_dir: Path) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        path = Path(value).expanduser()
+        page_images = (page_dir / "Images").resolve()
+
+        if path.is_absolute():
+            if not path.exists():
+                return None
+            resolved = path.resolve()
+            try:
+                relative = resolved.relative_to(page_images)
+                return f"Images/{relative.as_posix()}"
+            except ValueError:
+                return self._copy_icon_to_page(resolved, page_dir)
+
+        # Relative path already on the destination page — keep as-is.
+        if (page_dir / value).exists():
+            return None
+        return None
+
     def _position_sort_key(self, position: str) -> tuple[int, int]:
-        col, row = [int(part) for part in position.split(",")]
-        return (row, col)
+        try:
+            col, row = [int(part) for part in str(position).split(",")]
+            return (row, col)
+        except (TypeError, ValueError):
+            # Sort malformed keys last so one bad slot cannot abort a scan/read.
+            return (10**9, 10**9)
 
     def _generate_directory_id(self, *, length: int = 27) -> str:
         alphabet = string.ascii_uppercase + string.digits

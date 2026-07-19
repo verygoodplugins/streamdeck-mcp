@@ -524,10 +524,173 @@ def test_find_actions_matches_keypad_by_plugin_uuid_and_query(
     assert hit["action"]["Settings"] == {"entityId": "light.office", "mode": "toggle"}
     assert hit["action"]["ActionID"] != "ha-light-action"
     assert hit["action"]["UUID"] == "de.perdoctus.streamdeck.homeassistant.entity"
+    # Page-local Images/ paths are absolutized so paste into another page can copy them.
+    assert Path(hit["action"]["States"][0]["Image"]).is_absolute() or hit["action"]["States"][0][
+        "Image"
+    ].startswith("Images/")
 
     by_query = manager.find_actions(query="office")
     assert by_query["count"] == 1
     assert by_query["actions"][0]["action_uuid"] == ("de.perdoctus.streamdeck.homeassistant.entity")
+
+
+def test_find_actions_absolutizes_existing_page_assets(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    page_dir = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+    )
+    images_dir = page_dir / "Images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    icon_path = images_dir / "office.png"
+    icon_path.write_bytes(
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f"
+        b"\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+
+    page_path = page_dir / "manifest.json"
+    page_manifest = json.loads(page_path.read_text())
+    page_manifest["Controllers"][0]["Actions"]["2,0"] = {
+        "ActionID": "ha-light-action",
+        "Name": "Entity",
+        "Plugin": {
+            "Name": "Home Assistant",
+            "UUID": "de.perdoctus.streamdeck.homeassistant",
+            "Version": "3.7.1",
+        },
+        "Settings": {"entityId": "light.office"},
+        "State": 0,
+        "States": [{"Title": "Office", "Image": "Images/office.png"}],
+        "UUID": "de.perdoctus.streamdeck.homeassistant.entity",
+    }
+    page_path.write_text(json.dumps(page_manifest))
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    hit = manager.find_actions(plugin_uuid="de.perdoctus.streamdeck.homeassistant")["actions"][0]
+    image = hit["action"]["States"][0]["Image"]
+    assert Path(image).is_absolute()
+    assert Path(image).exists()
+
+    manager.write_page(
+        profile_name="Default Profile",
+        directory_id="CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+        buttons=[{"key": 0, "action": hit["action"]}],
+    )
+    target_page = manager.read_page(
+        profile_name="Default Profile",
+        directory_id="CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+    )
+    target_image = target_page["buttons"][0]["image"]
+    assert target_image.startswith("Images/")
+    target_dir = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"
+    )
+    assert (target_dir / target_image).exists()
+
+
+def test_find_actions_skips_corrupt_page_and_continues(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    bad_page = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
+        / "manifest.json"
+    )
+    bad_page.write_text("{not-json")
+
+    page_path = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        / "manifest.json"
+    )
+    page_manifest = json.loads(page_path.read_text())
+    page_manifest["Controllers"][0]["Actions"]["1,0"] = {
+        "ActionID": "keep-me",
+        "Name": "Open",
+        "Plugin": {
+            "Name": "Open",
+            "UUID": "com.elgato.streamdeck.system.open",
+            "Version": "1.0",
+        },
+        "Settings": {},
+        "State": 0,
+        "States": [{"Title": "Keep"}],
+        "UUID": "com.elgato.streamdeck.system.open",
+    }
+    # Malformed position key must not abort the scan.
+    page_manifest["Controllers"][0]["Actions"]["bad-slot"] = {
+        "ActionID": "broken",
+        "Name": "Broken",
+        "Plugin": {"Name": "X", "UUID": "com.example.x", "Version": "1"},
+        "Settings": {},
+        "State": 0,
+        "States": [{}],
+        "UUID": "com.example.x.action",
+    }
+    page_path.write_text(json.dumps(page_manifest))
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    result = manager.find_actions(query="keep")
+    assert result["count"] >= 1
+    assert any(hit["title"] == "Keep" for hit in result["actions"])
+
+
+def test_write_page_mints_unique_action_ids_for_repeated_raw_paste(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    shared_action = {
+        "ActionID": "shared-id",
+        "Name": "Open",
+        "Plugin": {
+            "Name": "Open",
+            "UUID": "com.elgato.streamdeck.system.open",
+            "Version": "1.0",
+        },
+        "Settings": {"path": '"/tmp/a.sh"'},
+        "State": 0,
+        "States": [{"Title": "A"}],
+        "UUID": "com.elgato.streamdeck.system.open",
+    }
+    manager.write_page(
+        profile_name="Default Profile",
+        directory_id="CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+        buttons=[
+            {"key": 0, "action": shared_action},
+            {"key": 1, "action": shared_action},
+        ],
+    )
+    page = manager.read_page(
+        profile_name="Default Profile",
+        directory_id="CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+    )
+    ids = [button["action_id"] for button in page["buttons"]]
+    assert len(ids) == 2
+    assert ids[0] != ids[1]
+    assert "shared-id" not in ids
 
 
 def test_find_actions_finds_encoder_dials(sample_profiles_plus_xl: Path, tmp_path: Path) -> None:
@@ -653,7 +816,9 @@ def test_find_actions_paste_into_write_page(sample_profiles_v3: Path, tmp_path: 
     assert pasted["plugin_uuid"] == "de.perdoctus.streamdeck.homeassistant"
     assert pasted["settings"] == {"entityId": "light.office", "mode": "toggle"}
     assert pasted["title"] == "Office Paste"
-    assert pasted["action_id"] == hit["action"]["ActionID"]
+    # write_page mints a fresh ActionID even when reusing a find_actions hit.
+    assert pasted["action_id"] != "ha-light-action"
+    assert pasted["action_id"] != hit["action"]["ActionID"]
 
 
 def test_find_actions_empty_returns_hint(sample_profiles_v3: Path, tmp_path: Path) -> None:
