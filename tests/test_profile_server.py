@@ -96,3 +96,33 @@ async def test_profile_server_find_actions_calls_manager(monkeypatch: pytest.Mon
     assert calls["limit"] == 10
     assert payload["count"] == 1
     assert payload["actions"][0]["plugin_uuid"] == "com.example.plugin"
+
+
+@pytest.mark.asyncio
+async def test_profile_server_validation_errors_are_mcp_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class StubManager:
+        def read_page(self, **_kwargs):
+            raise profile_server.ProfileNotFoundError("Profile not found: <unspecified>")
+
+    monkeypatch.setattr(profile_server, "manager", StubManager())
+
+    response = await profile_server.call_tool(
+        "streamdeck_read_page",
+        {"directory_id": "missing-page"},
+    )
+
+    assert response.isError is True
+    assert response.content[0].text == "❌ Profile not found: <unspecified>"
+
+
+@pytest.mark.asyncio
+async def test_profile_server_invalid_buttons_payload_is_mcp_error() -> None:
+    response = await profile_server.call_tool(
+        "streamdeck_write_page",
+        {"buttons": "not json"},
+    )
+
+    assert response.isError is True
+    assert "'buttons' was a string but not a valid JSON array" in response.content[0].text

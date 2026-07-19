@@ -17,6 +17,7 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
+    CallToolResult,
     GetPromptResult,
     Prompt,
     PromptArgument,
@@ -47,6 +48,10 @@ server = Server("streamdeck-profile-mcp")
 _SKILL_PATH = (
     Path(__file__).parent / "streamdeck_assets" / "skill" / "streamdeck-designer" / "SKILL.md"
 )
+
+
+def _error_result(text: str) -> CallToolResult:
+    return CallToolResult(content=[TextContent(type="text", text=text)], isError=True)
 
 
 def _scalar_or_string(base_type: str) -> dict[str, Any]:
@@ -710,7 +715,7 @@ async def list_tools() -> list[Tool]:
 
 
 @server.call_tool()
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent] | CallToolResult:
     """Handle profile writer tool calls."""
 
     # Normalize stringified args from MCP clients that serialize non-string
@@ -774,16 +779,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             # handler iterate the string one char at a time.
             raw_buttons = arguments.get("buttons")
             if isinstance(raw_buttons, str):
-                return [
-                    TextContent(
-                        type="text",
-                        text=(
-                            "❌ 'buttons' was a string but not a valid JSON "
-                            "array. Pass either a JSON array or a JSON-encoded "
-                            "string of an array."
-                        ),
-                    )
-                ]
+                return _error_result(
+                    "❌ 'buttons' was a string but not a valid JSON "
+                    "array. Pass either a JSON array or a JSON-encoded "
+                    "string of an array."
+                )
             result = manager.write_page(
                 profile_name=arguments.get("profile_name"),
                 profile_id=arguments.get("profile_id"),
@@ -807,16 +807,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 try:
                     batch = json.loads(batch)
                 except json.JSONDecodeError as exc:
-                    return [
-                        TextContent(
-                            type="text",
-                            text=(
-                                "❌ 'icons' was a string but not valid JSON: "
-                                f"{exc}. Pass either a JSON array or a "
-                                "JSON-encoded string."
-                            ),
-                        )
-                    ]
+                    return _error_result(
+                        "❌ 'icons' was a string but not valid JSON: "
+                        f"{exc}. Pass either a JSON array or a "
+                        "JSON-encoded string."
+                    )
             if batch is not None:
                 icons_result = manager.create_icons(batch)
                 return [
@@ -857,20 +852,20 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             result = manager.restart_app()
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
-        return [TextContent(type="text", text=f"❌ Unknown tool: {name}")]
+        return _error_result(f"❌ Unknown tool: {name}")
 
     except StreamDeckAppRunningError as exc:
-        return [TextContent(type="text", text=f"⚠️ {exc}")]
+        return _error_result(f"⚠️ {exc}")
     except (
         ProfileManagerError,
         ProfileNotFoundError,
         PageNotFoundError,
         ProfileValidationError,
     ) as exc:
-        return [TextContent(type="text", text=f"❌ {exc}")]
+        return _error_result(f"❌ {exc}")
     except Exception as exc:  # pragma: no cover
         logger.exception("Unexpected error in %s", name)
-        return [TextContent(type="text", text=f"❌ Unexpected error: {exc}")]
+        return _error_result(f"❌ Unexpected error: {exc}")
 
 
 @server.list_prompts()
