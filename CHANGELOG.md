@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/verygoodplugins/streamdeck-mcp/compare/v0.3.0...v0.4.0) (2026-07-19)
+
+
+### Features
+
+* **profile:** add streamdeck_find_actions for plugin reuse discovery ([#61](https://github.com/verygoodplugins/streamdeck-mcp/issues/61)) ([dd3e58d](https://github.com/verygoodplugins/streamdeck-mcp/commit/dd3e58da3199d0e1de8d6f43cb7595e54cfa5f76))
+* **profile:** infer plugin PI settings and add Remotion trailer ([#59](https://github.com/verygoodplugins/streamdeck-mcp/issues/59)) ([9d7c66b](https://github.com/verygoodplugins/streamdeck-mcp/commit/9d7c66b1980b90e9c059823a950584f9ed99a00f))
+
+
+### Bug Fixes
+
+* **usb:** select stream deck by serial ([#45](https://github.com/verygoodplugins/streamdeck-mcp/issues/45)) ([67cbe4e](https://github.com/verygoodplugins/streamdeck-mcp/commit/67cbe4eccd32053996fc558ba76eb70ea412bbe2))
+
+
+### Documentation
+
+* Lead README with use cases and multi-client install ([#37](https://github.com/verygoodplugins/streamdeck-mcp/issues/37)) ([9cab555](https://github.com/verygoodplugins/streamdeck-mcp/commit/9cab5558c1a6baed38f383c6c8e98da007c2de37))
+* **readme:** polish GitHub landing page ([#47](https://github.com/verygoodplugins/streamdeck-mcp/issues/47)) ([29bb8bc](https://github.com/verygoodplugins/streamdeck-mcp/commit/29bb8bcfd01e92560c69b8819baa5685f1c871ea))
+
 ## [0.3.0](https://github.com/verygoodplugins/streamdeck-mcp/compare/v0.2.0...v0.3.0) (2026-04-28)
 
 
