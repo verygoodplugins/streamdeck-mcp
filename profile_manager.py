@@ -985,6 +985,175 @@ class ProfileManager:
             "raw_manifest": page_manifest,
         }
 
+    def find_actions(
+        self,
+        *,
+        query: str | None = None,
+        plugin_uuid: str | None = None,
+        action_uuid: str | None = None,
+        plugin_name: str | None = None,
+        controller: str | None = None,
+        profile_name: str | None = None,
+        profile_id: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Search configured buttons/dials across profiles for reuse in write_page.
+
+        Returns paste-ready native ``action`` objects (deep copies with a fresh
+        ActionID) so agents can place installed plugin actions without guessing
+        Property Inspector settings.
+        """
+
+        if limit < 1:
+            raise ProfileValidationError("limit must be at least 1.")
+        capped_limit = min(int(limit), 200)
+
+        controller_filter: str | None = None
+        if controller is not None and str(controller).strip():
+            controller_filter = _normalize_controller(controller).lower()
+
+        query_norm = (query or "").strip().lower() or None
+        plugin_uuid_norm = (plugin_uuid or "").strip().lower() or None
+        action_uuid_norm = (action_uuid or "").strip().lower() or None
+        plugin_name_norm = (plugin_name or "").strip().lower() or None
+
+        if profile_name or profile_id:
+            profile_dir, profile_manifest = self._resolve_profile(
+                profile_name=profile_name, profile_id=profile_id
+            )
+            profiles_to_scan = [(profile_dir, profile_manifest)]
+        else:
+            profiles_to_scan = []
+            if self.profiles_dir.exists():
+                for profile_dir in sorted(self.profiles_dir.glob("*.sdProfile")):
+                    profiles_to_scan.append(
+                        (profile_dir, _load_json(profile_dir / "manifest.json"))
+                    )
+
+        matches: list[dict[str, Any]] = []
+        truncated = False
+        seen: set[tuple[str, str, str, str]] = set()
+
+        for profile_dir, profile_manifest in profiles_to_scan:
+            if truncated:
+                break
+            page_refs = self._page_refs(profile_dir, profile_manifest)
+            profile_label = str(profile_manifest.get("Name", profile_dir.stem))
+            for page_ref in page_refs:
+                if truncated:
+                    break
+                try:
+                    page_manifest = _load_json(page_ref.manifest_path)
+                except ProfileManagerError:
+                    continue
+
+                for ctrl in page_manifest.get("Controllers") or []:
+                    if truncated:
+                        break
+                    controller_type = ctrl.get("Type", KEYPAD)
+                    controller_lower = str(controller_type).lower()
+                    if controller_filter and controller_lower != controller_filter:
+                        continue
+
+                    cols, _rows = self._resolve_layout(
+                        profile_manifest, page_manifest, controller_type
+                    )
+                    actions = ctrl.get("Actions") or {}
+                    for position, action in sorted(
+                        actions.items(),
+                        key=lambda item: self._position_sort_key(item[0]),
+                    ):
+                        if not isinstance(action, dict):
+                            continue
+                        dedupe_key = (
+                            profile_dir.stem,
+                            page_ref.directory_id,
+                            controller_lower,
+                            str(position),
+                        )
+                        if dedupe_key in seen:
+                            continue
+                        try:
+                            col, row = [int(part) for part in str(position).split(",")]
+                        except ValueError:
+                            continue
+                        key = (row * cols + col) if cols else col
+
+                        states = action.get("States") or [{}]
+                        state_index = min(
+                            max(int(action.get("State", 0)), 0),
+                            max(len(states) - 1, 0),
+                        )
+                        active_state = states[state_index] if states else {}
+                        plugin = action.get("Plugin") or {}
+                        hit_plugin_uuid = str(plugin.get("UUID") or "")
+                        hit_plugin_name = str(plugin.get("Name") or "")
+                        hit_action_uuid = str(action.get("UUID") or "")
+                        hit_name = str(action.get("Name") or "")
+                        hit_title = str(active_state.get("Title") or "")
+
+                        if plugin_uuid_norm and hit_plugin_uuid.lower() != plugin_uuid_norm:
+                            continue
+                        if action_uuid_norm and hit_action_uuid.lower() != action_uuid_norm:
+                            continue
+                        if plugin_name_norm and hit_plugin_name.lower() != plugin_name_norm:
+                            continue
+                        if query_norm:
+                            haystack = " ".join(
+                                [
+                                    hit_plugin_name,
+                                    hit_name,
+                                    hit_title,
+                                    hit_plugin_uuid,
+                                    hit_action_uuid,
+                                ]
+                            ).lower()
+                            if query_norm not in haystack:
+                                continue
+
+                        if len(matches) >= capped_limit:
+                            truncated = True
+                            break
+
+                        seen.add(dedupe_key)
+                        paste_action = copy.deepcopy(action)
+                        paste_action["ActionID"] = str(uuid.uuid4())
+                        matches.append(
+                            {
+                                "profile_name": profile_label,
+                                "profile_id": profile_dir.stem,
+                                "page_name": page_ref.name
+                                or page_manifest.get("Name")
+                                or page_ref.directory_id,
+                                "directory_id": page_ref.directory_id,
+                                "page_index": page_ref.page_index,
+                                "controller": controller_lower,
+                                "key": key,
+                                "position": position,
+                                "title": hit_title or None,
+                                "name": hit_name or None,
+                                "plugin_name": hit_plugin_name or None,
+                                "plugin_uuid": hit_plugin_uuid or None,
+                                "action_uuid": hit_action_uuid or None,
+                                "settings": copy.deepcopy(action.get("Settings") or {}),
+                                "action": paste_action,
+                            }
+                        )
+
+        result: dict[str, Any] = {
+            "count": len(matches),
+            "truncated": truncated,
+            "actions": matches,
+        }
+        if not matches:
+            result["hint"] = (
+                "No configured actions matched. Configure the action once in the "
+                "Stream Deck app (then re-run find), or synthesize via "
+                "streamdeck_read_plugins + plugin_uuid/action_uuid/settings on "
+                "streamdeck_write_page."
+            )
+        return result
+
     def write_page(
         self,
         *,

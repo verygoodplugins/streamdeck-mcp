@@ -69,24 +69,25 @@ uvx --from streamdeck-mcp streamdeck-mcp-install-skill
 
 - **Profile-native authoring** - reads and writes Elgato `ProfilesV3` files directly, with `ProfilesV2` fallback for older installs.
 - **Hardware inventory** - discovers profile pages, device model names, key geometry, dials, and touch-strip support before writing.
-- **Installed plugin discovery** - scans readable Stream Deck plugin manifests with `streamdeck_read_plugins` so agents can find plugin and action UUIDs.
-- **Configured plugin action reuse** - reads existing buttons with `streamdeck_read_page` and preserves plugin-specific settings by copying `button.raw`; it does not infer private property-inspector settings.
+- **Configured action search** - `streamdeck_find_actions` scans existing profiles/pages for paste-ready plugin buttons and dials (including protected first-party Elgato plugins configured in the app).
+- **Installed plugin discovery** - scans readable Stream Deck plugin manifests with `streamdeck_read_plugins` so agents can find plugin and action UUIDs when synthesizing new actions.
+- **Configured plugin action reuse** - prefers copying existing actions via `find_actions` or `streamdeck_read_page`'s `button.raw` so private Property Inspector settings stay intact.
 - **Offline icon generation** - renders button and touch-strip PNGs from about 7,400 bundled Material Design Icons, or from short text labels.
-- **Script-backed automations** - creates executable shell scripts in `~/StreamDeckScripts/` and wires them to Stream Deck Open actions.
+- **Script-backed automations** - creates executable shell scripts in `~/StreamDeckScripts/` and wires them to Stream Deck Open actions when no plugin action fits.
 - **Dial and touch-strip support** - installs a minimal bundled Stream Deck plugin when needed so encoder imagery survives app restarts.
 - **Safe write cycle** - guards against the Elgato app overwriting manifest edits by enforcing a quit, write, relaunch workflow.
 
 ## Agentic Workflows
 
-The point is not generic buttons. When your agent also has Slack, Home Assistant, OBS, GitHub, Hue, Spotify, or other MCP servers loaded, it can query those systems first and build around what is actually in your environment.
+The point is not generic buttons. Prefer reusing actions the user already configured in the Stream Deck app (Hue, OBS, Home Assistant, Spotify plugins, etc.), then compose them onto a themed page. When your agent also has Slack, Home Assistant, OBS, GitHub, Hue, Spotify, or other MCP servers loaded, it can query those systems to pick the right entities — and still wire the deck through native plugin actions when available, falling back to scripts only when needed.
 
 Try prompts like:
 
 - **"Make me a control board for Slack."** Query channels, status, and unread state; create channel jumps, status toggles, read-all controls, and dials.
-- **"A hello-kitty-themed Home Assistant dashboard for the living room."** Discover living-room entities, then lay out scenes, lights, and media controls in a matching visual style.
-- **"OBS control panel based on my actual scenes and audio inputs."** Read scenes, sources, and devices; write scene switches, source toggles, and per-input dial controls.
+- **"A hello-kitty-themed Home Assistant dashboard for the living room."** Find existing HA plugin buttons with `streamdeck_find_actions`, then lay them out with a matching visual style — or discover living-room entities via MCP and synthesize/scripts when nothing is configured yet.
+- **"OBS control panel based on my actual scenes and audio inputs."** Reuse configured OBS plugin actions when present; otherwise read scenes/sources and write scene switches, source toggles, and per-input dial controls.
 - **"A dev deck for this repo in Nordic colors."** Read project scripts and GitHub context; create local command buttons, PR links, and CI shortcuts.
-- **"A Friday demo deck."** Compose across Zoom, Slack, Hue, and screen recording by generating local scripts and wiring them to one page.
+- **"A Friday demo deck."** Compose across Zoom, Slack, Hue, and screen recording by finding configured plugin actions first, then generating local scripts for the gaps.
 
 Iteration is cheap: change the prompt, rerun the authoring flow, and get a new profile.
 
@@ -171,10 +172,11 @@ Client config shape:
 
 | Tool | What it does |
 |------|---------------|
+| `streamdeck_find_actions` | Searches configured buttons/dials across profiles and returns paste-ready native `action` objects for `streamdeck_write_page`. |
 | `streamdeck_read_plugins` | Lists installed Stream Deck plugins and declared actions from readable plugin manifests. Protected or binary manifests are reported with diagnostics instead of failing the whole catalog. |
 | `streamdeck_read_profiles` | Lists desktop profiles, device metadata, page directories, and active profile roots from `ProfilesV3` or `ProfilesV2`. |
 | `streamdeck_read_page` | Reads a page manifest and returns simplified button details plus raw native action objects. |
-| `streamdeck_write_page` | Creates or rewrites a page manifest. Use copied `button.raw` values when reusing configured third-party plugin actions. |
+| `streamdeck_write_page` | Creates or rewrites a page manifest. Prefer `action` from `find_actions` / `button.raw` when reusing configured third-party plugin actions. |
 | `streamdeck_create_icon` | Generates button or touch-strip PNGs from Material Design Icons or text. Icons are bundled offline; unknown names return close-match suggestions. |
 | `streamdeck_create_action` | Creates an executable shell script in `~/StreamDeckScripts/` and returns an Open action block. |
 | `streamdeck_restart_app` | Restarts the macOS Stream Deck desktop app after profile changes. |
@@ -204,7 +206,7 @@ The skill covers:
 - Theme palettes, typography strategy, and icon-color guidance.
 - Dial and touch-strip authoring for Stream Deck + and + XL devices.
 - Integration recipes for Hue, OBS, Spotify, Home Assistant, Twitch, shell commands, and browser workflows.
-- Existing plugin action reuse through `streamdeck_read_page` and `button.raw`.
+- Existing plugin action reuse through `streamdeck_find_actions` and `streamdeck_read_page` / `button.raw`.
 
 Clients that do not load Claude Code skills can invoke the `design_streamdeck_deck` MCP prompt instead.
 

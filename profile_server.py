@@ -291,19 +291,79 @@ async def list_tools() -> list[Tool]:
 
     return [
         Tool(
+            name="streamdeck_find_actions",
+            description=(
+                "Search configured buttons and dials across Stream Deck profiles/pages "
+                "and return paste-ready native action objects for streamdeck_write_page. "
+                "Prefer this FIRST when building layouts that reuse installed plugins "
+                "(Home Assistant, Hue, OBS, Spotify, Wave Link, etc.): each hit's "
+                "'action' field preserves plugin Settings — pass it as the button's "
+                "'action' on write_page (optionally override title/icon_path). Filters: "
+                "query (substring), plugin_uuid, action_uuid, plugin_name, controller "
+                "(keypad|encoder), optional profile scope. Returns a fresh ActionID per "
+                "hit so multi-copy pastes are safe. For protected Elgato manifests that "
+                "streamdeck_read_plugins cannot enumerate, this is the reliable path — "
+                "configure once in the Stream Deck app, then find and reuse."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Case-insensitive substring matched against plugin name, "
+                            "action name, title, plugin_uuid, and action_uuid."
+                        ),
+                    },
+                    "plugin_uuid": {
+                        "type": "string",
+                        "description": "Exact plugin UUID filter (case-insensitive).",
+                    },
+                    "action_uuid": {
+                        "type": "string",
+                        "description": "Exact action UUID filter (case-insensitive).",
+                    },
+                    "plugin_name": {
+                        "type": "string",
+                        "description": ("Exact plugin display name filter (case-insensitive)."),
+                    },
+                    "controller": {
+                        "type": "string",
+                        "description": (
+                            "Limit to 'keypad' (buttons) or 'encoder' (dials). Omit to search both."
+                        ),
+                    },
+                    "profile_name": {
+                        "type": "string",
+                        "description": "Limit the scan to one profile by display name.",
+                    },
+                    "profile_id": {
+                        "type": "string",
+                        "description": ("Limit the scan to one profile by .sdProfile folder stem."),
+                    },
+                    "limit": {
+                        **_scalar_or_string("integer"),
+                        "description": (
+                            "Max hits to return (default 50, hard cap 200). "
+                            "When more match, truncated=true."
+                        ),
+                    },
+                },
+            },
+        ),
+        Tool(
             name="streamdeck_read_plugins",
             description=(
                 "List installed Stream Deck plugins and their declared actions from "
                 "the user's Elgato Plugins directory, including each action's UUID, "
                 "Name, States, and — best-effort — the Settings fields its Property "
                 "Inspector expects (parsed from the action's PI HTML/JS). Use this "
-                "before authoring a third-party plugin action with "
-                "streamdeck_write_page: it gives you the plugin_uuid, action_uuid, "
-                "state_count, and settings_fields you need. Notes: some first-party "
-                "Elgato plugins (OBS, Home Assistant, Hue, Spotify, Zoom, …) ship "
-                "ELGATO-protected/binary manifests and are reported with "
-                "parse_status instead of action metadata — for those, copy a "
-                "configured button via streamdeck_read_page's raw action. "
+                "to synthesize a NEW third-party action when streamdeck_find_actions "
+                "finds no configured instance. Prefer find_actions (or read_page.raw) "
+                "when the user already configured the button/dial in the Stream Deck "
+                "app — especially for first-party Elgato plugins (OBS, Hue, Spotify, "
+                "Zoom, …) that ship ELGATO-protected/binary manifests and are "
+                "reported with parse_status instead of action metadata. "
                 "settings_fields are heuristic: a missing field is not proof it is "
                 "unused, and a listed field is not guaranteed required."
             ),
@@ -349,7 +409,13 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="streamdeck_read_page",
-            description="Read a profile page by profile name or ID and page index or directory ID.",
+            description=(
+                "Read a profile page by profile name or ID and page index or "
+                "directory ID. Each button/dial includes a 'raw' native action "
+                "object — copy it into streamdeck_write_page's button 'action' "
+                "field to reuse configured plugin settings without guessing. For "
+                "searching across many pages, prefer streamdeck_find_actions."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -385,15 +451,14 @@ async def list_tools() -> list[Tool]:
             name="streamdeck_write_page",
             description=(
                 "Create a new page or replace/update an existing Stream Deck desktop "
-                "page manifest. Buttons can be page-nav (action_type), script-backed "
-                "Open actions (path, from streamdeck_create_action), the bundled MCP "
-                "dial, OR a native action for ANY installed third-party plugin — pass "
-                "plugin_uuid + action_uuid + settings (discover these with "
-                "streamdeck_read_plugins) and the tool writes the same native action "
-                "shape Stream Deck itself uses (Plugin metadata, State, States, "
-                "Settings), defaulting the States count and Plugin name/version from "
-                "the installed manifest so the button survives Elgato's "
-                "overwrite-on-quit. Validation: an unknown plugin_uuid/action_uuid "
+                "page manifest. Authoring preference order: (1) paste a native "
+                "'action' from streamdeck_find_actions or streamdeck_read_page's "
+                "button.raw — best for installed plugins with private Settings; "
+                "(2) synthesize via plugin_uuid + action_uuid + settings from "
+                "streamdeck_read_plugins when no configured instance exists; "
+                "(3) script-backed Open actions via path / streamdeck_create_action "
+                "for custom automation; also supports page-nav (action_type) and "
+                "the bundled MCP dial. Validation: unknown plugin_uuid/action_uuid "
                 "raises a clear error listing what is installed; missing settings "
                 "fields are reported non-fatally in the result's 'warnings'. "
                 "IMPORTANT: the Elgato desktop app overwrites profile manifests from "
@@ -654,7 +719,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     # the values back to the types the handlers expect.
     arguments = _coerce_arguments(
         arguments,
-        ints=("page_index", "font_size", "state", "key"),
+        ints=("page_index", "font_size", "state", "key", "limit"),
         nums=("icon_scale",),
         bools=(
             "clear_existing",
@@ -670,6 +735,19 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     )
 
     try:
+        if name == "streamdeck_find_actions":
+            payload = manager.find_actions(
+                query=arguments.get("query"),
+                plugin_uuid=arguments.get("plugin_uuid"),
+                action_uuid=arguments.get("action_uuid"),
+                plugin_name=arguments.get("plugin_name"),
+                controller=arguments.get("controller"),
+                profile_name=arguments.get("profile_name"),
+                profile_id=arguments.get("profile_id"),
+                limit=arguments.get("limit", 50),
+            )
+            return [TextContent(type="text", text=json.dumps(payload, indent=2))]
+
         if name == "streamdeck_read_plugins":
             plugins = manager.list_plugins(
                 plugin_id=arguments.get("plugin_id"),

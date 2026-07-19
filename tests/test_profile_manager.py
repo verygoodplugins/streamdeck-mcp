@@ -478,6 +478,198 @@ def test_plugin_catalog_supports_reusing_configured_raw_plugin_actions(
     assert copied["title"] == "Office Copy"
 
 
+def test_find_actions_matches_keypad_by_plugin_uuid_and_query(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    page_path = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        / "manifest.json"
+    )
+    page_manifest = json.loads(page_path.read_text())
+    configured_action = {
+        "ActionID": "ha-light-action",
+        "LinkedTitle": False,
+        "Name": "Entity",
+        "Plugin": {
+            "Name": "Home Assistant",
+            "UUID": "de.perdoctus.streamdeck.homeassistant",
+            "Version": "3.7.1",
+        },
+        "Settings": {"entityId": "light.office", "mode": "toggle"},
+        "State": 0,
+        "States": [{"Title": "Office", "Image": "Images/office.png"}],
+        "UUID": "de.perdoctus.streamdeck.homeassistant.entity",
+    }
+    page_manifest["Controllers"][0]["Actions"]["2,0"] = configured_action
+    page_path.write_text(json.dumps(page_manifest))
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    by_uuid = manager.find_actions(plugin_uuid="de.perdoctus.streamdeck.homeassistant")
+    assert by_uuid["count"] == 1
+    assert by_uuid["truncated"] is False
+    hit = by_uuid["actions"][0]
+    assert hit["plugin_name"] == "Home Assistant"
+    assert hit["title"] == "Office"
+    assert hit["controller"] == "keypad"
+    assert hit["position"] == "2,0"
+    assert hit["settings"] == {"entityId": "light.office", "mode": "toggle"}
+    assert hit["action"]["Settings"] == {"entityId": "light.office", "mode": "toggle"}
+    assert hit["action"]["ActionID"] != "ha-light-action"
+    assert hit["action"]["UUID"] == "de.perdoctus.streamdeck.homeassistant.entity"
+
+    by_query = manager.find_actions(query="office")
+    assert by_query["count"] == 1
+    assert by_query["actions"][0]["action_uuid"] == ("de.perdoctus.streamdeck.homeassistant.entity")
+
+
+def test_find_actions_finds_encoder_dials(sample_profiles_plus_xl: Path, tmp_path: Path) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_plus_xl,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    result = manager.find_actions(controller="encoder", query="wave")
+    assert result["count"] == 1
+    hit = result["actions"][0]
+    assert hit["controller"] == "encoder"
+    assert hit["plugin_uuid"] == "com.elgato.wave-link"
+    assert hit["settings"] == {"channelId": "mic"}
+    assert hit["action"]["ActionID"] != "dial-volume"
+
+
+def test_find_actions_scopes_profile_and_respects_limit(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    page_path = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        / "manifest.json"
+    )
+    page_manifest = json.loads(page_path.read_text())
+    actions = page_manifest["Controllers"][0]["Actions"]
+    for col in range(3):
+        actions[f"{col},1"] = {
+            "ActionID": f"extra-{col}",
+            "Name": "Open",
+            "Plugin": {
+                "Name": "Open",
+                "UUID": "com.elgato.streamdeck.system.open",
+                "Version": "1.0",
+            },
+            "Settings": {"path": f'"/tmp/{col}.sh"'},
+            "State": 0,
+            "States": [{"Title": f"Extra {col}"}],
+            "UUID": "com.elgato.streamdeck.system.open",
+        }
+    page_path.write_text(json.dumps(page_manifest))
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    scoped = manager.find_actions(
+        profile_name="Default Profile",
+        plugin_uuid="com.elgato.streamdeck.system.open",
+    )
+    assert scoped["count"] == 4  # original Deploy + 3 extras
+    assert all(hit["profile_name"] == "Default Profile" for hit in scoped["actions"])
+
+    limited = manager.find_actions(
+        profile_name="Default Profile",
+        plugin_uuid="com.elgato.streamdeck.system.open",
+        limit=2,
+    )
+    assert limited["count"] == 2
+    assert limited["truncated"] is True
+
+
+def test_find_actions_paste_into_write_page(sample_profiles_v3: Path, tmp_path: Path) -> None:
+    page_path = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        / "manifest.json"
+    )
+    page_manifest = json.loads(page_path.read_text())
+    configured_action = {
+        "ActionID": "ha-light-action",
+        "LinkedTitle": False,
+        "Name": "Entity",
+        "Plugin": {
+            "Name": "Home Assistant",
+            "UUID": "de.perdoctus.streamdeck.homeassistant",
+            "Version": "3.7.1",
+        },
+        "Settings": {"entityId": "light.office", "mode": "toggle"},
+        "State": 0,
+        "States": [{"Title": "Office"}],
+        "UUID": "de.perdoctus.streamdeck.homeassistant.entity",
+    }
+    page_manifest["Controllers"][0]["Actions"]["2,0"] = configured_action
+    page_path.write_text(json.dumps(page_manifest))
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    found = manager.find_actions(plugin_name="Home Assistant")
+    assert found["count"] == 1
+    hit = found["actions"][0]
+
+    manager.write_page(
+        profile_name="Default Profile",
+        directory_id="CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+        buttons=[
+            {
+                "key": 3,
+                "title": "Office Paste",
+                "action": hit["action"],
+            }
+        ],
+    )
+
+    target = manager.read_page(
+        profile_name="Default Profile",
+        directory_id="CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+    )
+    pasted = target["buttons"][0]
+    assert pasted["key"] == 3
+    assert pasted["plugin_uuid"] == "de.perdoctus.streamdeck.homeassistant"
+    assert pasted["settings"] == {"entityId": "light.office", "mode": "toggle"}
+    assert pasted["title"] == "Office Paste"
+    assert pasted["action_id"] == hit["action"]["ActionID"]
+
+
+def test_find_actions_empty_returns_hint(sample_profiles_v3: Path, tmp_path: Path) -> None:
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    result = manager.find_actions(query="definitely-not-a-real-plugin-xyz")
+    assert result["count"] == 0
+    assert result["actions"] == []
+    assert "hint" in result
+    assert "find" in result["hint"].lower() or "configure" in result["hint"].lower()
+
+
 def test_write_page_updates_existing_v3_page(sample_profiles_v3: Path, tmp_path: Path) -> None:
     manager = ProfileManager(
         profiles_dir=sample_profiles_v3,
