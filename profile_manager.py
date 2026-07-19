@@ -940,14 +940,27 @@ class ProfileManager:
             layouts[controller_type.lower()] = {"columns": cols, "rows": rows}
 
             actions = controller.get("Actions") or {}
+            if not isinstance(actions, dict):
+                continue
             for position, action in sorted(
                 actions.items(),
                 key=lambda item: self._position_sort_key(item[0]),
             ):
-                col, row = [int(part) for part in position.split(",")]
+                if not isinstance(action, dict):
+                    continue
+                try:
+                    col, row = [int(part) for part in str(position).split(",")]
+                except ValueError:
+                    continue
                 key = (row * cols + col) if cols else col
                 states = action.get("States") or [{}]
-                state_index = min(max(int(action.get("State", 0)), 0), max(len(states) - 1, 0))
+                try:
+                    state_index = min(
+                        max(int(action.get("State", 0)), 0),
+                        max(len(states) - 1, 0),
+                    )
+                except (TypeError, ValueError):
+                    state_index = 0
                 active_state = states[state_index] if states else {}
                 buttons.append(
                     {
@@ -964,7 +977,9 @@ class ProfileManager:
                         "image": active_state.get("Image"),
                         "settings": action.get("Settings", {}),
                         "show_title": active_state.get("ShowTitle"),
-                        "raw": action,
+                        "raw": self._absolutize_action_assets(
+                            copy.deepcopy(action), page_ref.directory_path
+                        ),
                     }
                 )
 
@@ -984,6 +999,193 @@ class ProfileManager:
             "buttons": buttons,
             "raw_manifest": page_manifest,
         }
+
+    def find_actions(
+        self,
+        *,
+        query: str | None = None,
+        plugin_uuid: str | None = None,
+        action_uuid: str | None = None,
+        plugin_name: str | None = None,
+        controller: str | None = None,
+        profile_name: str | None = None,
+        profile_id: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Search configured buttons/dials across profiles for reuse in write_page.
+
+        Returns paste-ready native ``action`` objects (deep copies with a fresh
+        ActionID) so agents can place installed plugin actions without guessing
+        Property Inspector settings.
+        """
+
+        if limit < 1:
+            raise ProfileValidationError("limit must be at least 1.")
+        capped_limit = min(int(limit), 200)
+
+        controller_filter: str | None = None
+        if controller is not None and str(controller).strip():
+            controller_filter = _normalize_controller(controller).lower()
+
+        query_norm = (query or "").strip().lower() or None
+        plugin_uuid_norm = (plugin_uuid or "").strip().lower() or None
+        action_uuid_norm = (action_uuid or "").strip().lower() or None
+        plugin_name_norm = (plugin_name or "").strip().lower() or None
+
+        if profile_name or profile_id:
+            profile_dir, profile_manifest = self._resolve_profile(
+                profile_name=profile_name, profile_id=profile_id
+            )
+            profiles_to_scan = [(profile_dir, profile_manifest)]
+        else:
+            profiles_to_scan = []
+            if self.profiles_dir.exists():
+                for profile_dir in sorted(self.profiles_dir.glob("*.sdProfile")):
+                    try:
+                        profiles_to_scan.append(
+                            (profile_dir, _load_json(profile_dir / "manifest.json"))
+                        )
+                    except ProfileManagerError:
+                        # One corrupt/half-imported profile must not abort the search.
+                        continue
+
+        matches: list[dict[str, Any]] = []
+        truncated = False
+        seen: set[tuple[str, str, str, str]] = set()
+
+        for profile_dir, profile_manifest in profiles_to_scan:
+            if truncated:
+                break
+            page_refs = self._iter_page_refs_soft(profile_dir, profile_manifest)
+            profile_label = str(profile_manifest.get("Name", profile_dir.stem))
+            for page_ref in page_refs:
+                if truncated:
+                    break
+                try:
+                    page_manifest = _load_json(page_ref.manifest_path)
+                except ProfileManagerError:
+                    continue
+
+                for ctrl in page_manifest.get("Controllers") or []:
+                    if truncated:
+                        break
+                    controller_type = ctrl.get("Type", KEYPAD)
+                    controller_lower = str(controller_type).lower()
+                    if controller_filter and controller_lower != controller_filter:
+                        continue
+
+                    cols, _rows = self._resolve_layout(
+                        profile_manifest, page_manifest, controller_type
+                    )
+                    actions = ctrl.get("Actions") or {}
+                    if not isinstance(actions, dict):
+                        continue
+                    for position, action in sorted(
+                        actions.items(),
+                        key=lambda item: self._position_sort_key(item[0]),
+                    ):
+                        if not isinstance(action, dict):
+                            continue
+                        dedupe_key = (
+                            profile_dir.stem,
+                            page_ref.directory_id,
+                            controller_lower,
+                            str(position),
+                        )
+                        if dedupe_key in seen:
+                            continue
+                        try:
+                            col, row = [int(part) for part in str(position).split(",")]
+                        except ValueError:
+                            continue
+                        key = (row * cols + col) if cols else col
+
+                        states = action.get("States") or [{}]
+                        try:
+                            state_index = min(
+                                max(int(action.get("State", 0)), 0),
+                                max(len(states) - 1, 0),
+                            )
+                        except (TypeError, ValueError):
+                            state_index = 0
+                        active_state = states[state_index] if states else {}
+                        plugin = action.get("Plugin") or {}
+                        hit_plugin_uuid = str(plugin.get("UUID") or "")
+                        hit_plugin_name = str(plugin.get("Name") or "")
+                        hit_action_uuid = str(action.get("UUID") or "")
+                        hit_name = str(action.get("Name") or "")
+                        hit_title = str(active_state.get("Title") or "")
+
+                        if plugin_uuid_norm and hit_plugin_uuid.lower() != plugin_uuid_norm:
+                            continue
+                        if action_uuid_norm and hit_action_uuid.lower() != action_uuid_norm:
+                            continue
+                        if plugin_name_norm and hit_plugin_name.lower() != plugin_name_norm:
+                            continue
+                        if query_norm:
+                            haystack = " ".join(
+                                [
+                                    hit_plugin_name,
+                                    hit_name,
+                                    hit_title,
+                                    hit_plugin_uuid,
+                                    hit_action_uuid,
+                                ]
+                            ).lower()
+                            if query_norm not in haystack:
+                                continue
+
+                        if len(matches) >= capped_limit:
+                            truncated = True
+                            break
+
+                        seen.add(dedupe_key)
+                        paste_action = self._absolutize_action_assets(
+                            copy.deepcopy(action), page_ref.directory_path
+                        )
+                        paste_action["ActionID"] = str(uuid.uuid4())
+                        matches.append(
+                            {
+                                "profile_name": profile_label,
+                                "profile_id": profile_dir.stem,
+                                "page_name": page_ref.name
+                                or page_manifest.get("Name")
+                                or page_ref.directory_id,
+                                "directory_id": page_ref.directory_id,
+                                "page_index": page_ref.page_index,
+                                "controller": controller_lower,
+                                "key": key,
+                                "position": position,
+                                "title": hit_title or None,
+                                "name": hit_name or None,
+                                "plugin_name": hit_plugin_name or None,
+                                "plugin_uuid": hit_plugin_uuid or None,
+                                "action_uuid": hit_action_uuid or None,
+                                "settings": copy.deepcopy(action.get("Settings") or {}),
+                                "action": paste_action,
+                                # Paste-ready write_page button: includes controller so
+                                # encoder/dial hits land on the Encoder grid, not Keypad.
+                                "button": {
+                                    "controller": controller_lower,
+                                    "key": key,
+                                    "action": paste_action,
+                                },
+                            }
+                        )
+
+        result: dict[str, Any] = {
+            "count": len(matches),
+            "truncated": truncated,
+            "actions": matches,
+        }
+        if not matches:
+            result["hint"] = (
+                "No configured actions matched. Configure the action once in the "
+                "Stream Deck app (then re-run find), or synthesize via "
+                "streamdeck_read_plugins + plugin_uuid/action_uuid/settings on "
+                "streamdeck_write_page."
+            )
+        return result
 
     def write_page(
         self,
@@ -1441,7 +1643,13 @@ class ProfileManager:
 
         matches: list[tuple[Path, dict[str, Any]]] = []
         for profile_dir in sorted(self.profiles_dir.glob("*.sdProfile")):
-            manifest = _load_json(profile_dir / "manifest.json")
+            try:
+                manifest = _load_json(profile_dir / "manifest.json")
+            except ProfileManagerError:
+                # Targeted profile_id must surface the real JSON error, not "not found".
+                if profile_id and profile_dir.stem.lower() == profile_id.lower():
+                    raise
+                continue
             if profile_id and profile_dir.stem.lower() == profile_id.lower():
                 return profile_dir, manifest
             if profile_name and str(manifest.get("Name", "")).lower() == profile_name.lower():
@@ -1538,6 +1746,128 @@ class ProfileManager:
             )
         return page_refs
 
+    def _iter_page_refs_soft(
+        self, profile_dir: Path, profile_manifest: dict[str, Any]
+    ) -> list[PageRef]:
+        """Like ``_page_refs``, but skip missing/corrupt page manifests.
+
+        Used by ``find_actions`` so one bad page cannot abort a multi-page search.
+        Direct read/write paths keep strict ``_page_refs`` so invalid JSON surfaces
+        as a clear error for the targeted page.
+        """
+
+        profiles_path = profile_dir / "Profiles"
+        if not profiles_path.exists():
+            return []
+
+        version = str(profile_manifest.get("Version", "2.0"))
+        if version.startswith("3"):
+            return self._page_refs_v3_soft(profiles_path, profile_manifest)
+        return self._page_refs_v2_soft(profiles_path, profile_manifest)
+
+    def _page_refs_v3_soft(
+        self, profiles_path: Path, profile_manifest: dict[str, Any]
+    ) -> list[PageRef]:
+        page_refs: list[PageRef] = []
+        ordered_page_ids: list[tuple[str, bool]] = []
+        pages = profile_manifest.get("Pages", {})
+        default_uuid = pages.get("Default")
+        if default_uuid:
+            ordered_page_ids.append((default_uuid, True))
+        for page_uuid in pages.get("Pages", []):
+            ordered_page_ids.append((page_uuid, False))
+
+        used: set[str] = set()
+        for page_index, (page_uuid, is_default) in enumerate(ordered_page_ids):
+            directory_id = str(page_uuid).upper()
+            manifest_path = profiles_path / directory_id / "manifest.json"
+            if not manifest_path.exists():
+                continue
+            used.add(directory_id)
+            page_ref = self._try_build_page_ref(
+                page_index=page_index,
+                directory_id=directory_id,
+                page_uuid=str(page_uuid).lower(),
+                manifest_path=manifest_path,
+                version=str(profile_manifest.get("Version", "unknown")),
+                mapping="page-uuid",
+                is_default=is_default,
+                is_current=_normalize_uuid(str(page_uuid))
+                == _normalize_uuid(str(pages.get("Current", ""))),
+            )
+            if page_ref is not None:
+                page_refs.append(page_ref)
+
+        for manifest_path in sorted(profiles_path.glob("*/manifest.json")):
+            directory_id = manifest_path.parent.name.upper()
+            if directory_id in used:
+                continue
+            page_ref = self._try_build_page_ref(
+                page_index=len(page_refs),
+                directory_id=directory_id,
+                page_uuid=directory_id.lower() if _looks_like_uuid(directory_id) else None,
+                manifest_path=manifest_path,
+                version=str(profile_manifest.get("Version", "unknown")),
+                mapping="unreferenced",
+                is_default=False,
+                is_current=False,
+            )
+            if page_ref is not None:
+                page_refs.append(page_ref)
+
+        return page_refs
+
+    def _page_refs_v2_soft(
+        self, profiles_path: Path, profile_manifest: dict[str, Any]
+    ) -> list[PageRef]:
+        page_refs: list[PageRef] = []
+        entries = sorted(
+            (Path(entry.path) for entry in os.scandir(profiles_path) if entry.is_dir()),
+            key=lambda path: path.name.lower(),
+        )
+        for page_index, page_dir in enumerate(entries):
+            page_ref = self._try_build_page_ref(
+                page_index=page_index,
+                directory_id=page_dir.name,
+                page_uuid=None,
+                manifest_path=page_dir / "manifest.json",
+                version=str(profile_manifest.get("Version", "unknown")),
+                mapping="directory-order",
+                is_default=False,
+                is_current=False,
+            )
+            if page_ref is not None:
+                page_refs.append(page_ref)
+        return page_refs
+
+    def _try_build_page_ref(
+        self,
+        *,
+        page_index: int,
+        directory_id: str,
+        page_uuid: str | None,
+        manifest_path: Path,
+        version: str,
+        mapping: str,
+        is_default: bool,
+        is_current: bool,
+    ) -> PageRef | None:
+        """Build a PageRef, skipping missing/corrupt page manifests."""
+
+        try:
+            return self._build_page_ref(
+                page_index=page_index,
+                directory_id=directory_id,
+                page_uuid=page_uuid,
+                manifest_path=manifest_path,
+                version=version,
+                mapping=mapping,
+                is_default=is_default,
+                is_current=is_current,
+            )
+        except ProfileManagerError:
+            return None
+
     def _build_page_ref(
         self,
         *,
@@ -1602,9 +1932,16 @@ class ProfileManager:
 
         if page_manifest:
             actions = _controller_actions(page_manifest, controller_type)
-            if actions:
-                cols = max(int(position.split(",")[0]) for position in actions) + 1
-                rows = max(int(position.split(",")[1]) for position in actions) + 1
+            positions: list[tuple[int, int]] = []
+            for position in actions:
+                try:
+                    col_s, row_s = str(position).split(",")
+                    positions.append((int(col_s), int(row_s)))
+                except (TypeError, ValueError):
+                    continue
+            if positions:
+                cols = max(col for col, _row in positions) + 1
+                rows = max(row for _col, row in positions) + 1
                 if cols > 0 and rows > 0:
                     return cols, rows
 
@@ -1670,8 +2007,17 @@ class ProfileManager:
         else:
             raise ProfileValidationError("Button action must be an object or JSON string.")
 
+        # Raw/pasted actions may be reused across multiple slots; always mint a
+        # fresh ActionID so multi-copy pastes (including reuse of one find_actions
+        # hit) never collide on the destination page.
+        if raw_action is not None:
+            action["ActionID"] = str(uuid.uuid4())
+
         states = copy.deepcopy(action.get("States") or [{}])
-        state_index = min(max(int(action.get("State", 0)), 0), max(len(states) - 1, 0))
+        try:
+            state_index = min(max(int(action.get("State", 0)), 0), max(len(states) - 1, 0))
+        except (TypeError, ValueError):
+            state_index = 0
         state_data = copy.deepcopy(states[state_index] or {})
 
         if button.get("title") is not None:
@@ -1732,6 +2078,7 @@ class ProfileManager:
 
         states[state_index] = state_data
         action["States"] = states
+        self._ensure_action_assets_on_page(action, page_dir)
         return action
 
     def _build_action_from_fields(
@@ -2106,9 +2453,97 @@ class ProfileManager:
 
         return f"Images/{target_name}"
 
+    def _absolutize_action_assets(self, action: dict[str, Any], page_dir: Path) -> dict[str, Any]:
+        """Rewrite page-local Images/ paths to absolute source paths for paste reuse."""
+
+        for state in action.get("States") or []:
+            if not isinstance(state, dict):
+                continue
+            resolved = self._resolve_page_local_asset(state.get("Image"), page_dir)
+            if resolved is not None:
+                state["Image"] = resolved
+
+        encoder = action.get("Encoder")
+        if isinstance(encoder, dict):
+            for field in ("Icon", "background"):
+                resolved = self._resolve_page_local_asset(encoder.get(field), page_dir)
+                if resolved is not None:
+                    encoder[field] = resolved
+        return action
+
+    def _resolve_page_local_asset(self, value: Any, page_dir: Path) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        path = Path(value).expanduser()
+        page_root = page_dir.resolve()
+        images_root = (page_dir / "Images").resolve()
+
+        if path.is_absolute():
+            if not path.exists():
+                return None
+            resolved = path.resolve()
+            try:
+                resolved.relative_to(images_root)
+            except ValueError:
+                return None
+            return str(resolved)
+
+        candidate = (page_dir / value).resolve()
+        if not candidate.exists():
+            return None
+        try:
+            candidate.relative_to(page_root)
+            candidate.relative_to(images_root)
+        except ValueError:
+            # Reject ../ escapes and anything outside the page Images/ tree.
+            return None
+        return str(candidate)
+
+    def _ensure_action_assets_on_page(self, action: dict[str, Any], page_dir: Path) -> None:
+        """Copy absolute (or foreign) asset paths into the destination page Images/."""
+
+        for state in action.get("States") or []:
+            if not isinstance(state, dict):
+                continue
+            relocated = self._ensure_asset_on_page(state.get("Image"), page_dir)
+            if relocated is not None:
+                state["Image"] = relocated
+
+        encoder = action.get("Encoder")
+        if isinstance(encoder, dict):
+            for field in ("Icon", "background"):
+                relocated = self._ensure_asset_on_page(encoder.get(field), page_dir)
+                if relocated is not None:
+                    encoder[field] = relocated
+
+    def _ensure_asset_on_page(self, value: Any, page_dir: Path) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        path = Path(value).expanduser()
+        page_images = (page_dir / "Images").resolve()
+
+        if path.is_absolute():
+            if not path.exists():
+                return None
+            resolved = path.resolve()
+            try:
+                relative = resolved.relative_to(page_images)
+                return f"Images/{relative.as_posix()}"
+            except ValueError:
+                return self._copy_icon_to_page(resolved, page_dir)
+
+        # Relative path already on the destination page — keep as-is.
+        if (page_dir / value).exists():
+            return None
+        return None
+
     def _position_sort_key(self, position: str) -> tuple[int, int]:
-        col, row = [int(part) for part in position.split(",")]
-        return (row, col)
+        try:
+            col, row = [int(part) for part in str(position).split(",")]
+            return (row, col)
+        except (TypeError, ValueError):
+            # Sort malformed keys last so one bad slot cannot abort a scan/read.
+            return (10**9, 10**9)
 
     def _generate_directory_id(self, *, length: int = 27) -> str:
         alphabet = string.ascii_uppercase + string.digits

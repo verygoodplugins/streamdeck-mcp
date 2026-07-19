@@ -1007,7 +1007,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mcp", extras = ["cli"], specifier = ">=1.6.0" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.25.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },

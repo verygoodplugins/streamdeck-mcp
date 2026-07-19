@@ -61,13 +61,11 @@ For **Original / MK.2 / Neo / Mini**: fewer slots, so every slot matters more. O
 
 ### 5. Discover integrations at authoring time, don't guess endpoints
 
-When the user names an integration, check what you have access to **right now** in this session:
+When the user names an integration, prefer **reuse of already-configured Stream Deck plugin actions**, then synthesize, then scripts:
 
-- If the user wants to use an **installed Stream Deck plugin action**, call `streamdeck_read_plugins` first to discover installed plugins and action UUIDs. This is a manifest catalog only: it does not infer property-inspector settings schemas. Prefer copying configured actions from `streamdeck_read_page` via `button.raw`; only synthesize new third-party actions when you already have a known-good `plugin_uuid`, `action_uuid`, and `settings` shape.
-- If a matching MCP is available (Hue MCP, Home Assistant MCP, Spotify MCP, OBS MCP), **use it** to enumerate the user's real devices, scenes, rooms, playlists. The goal is that when the user presses "Chill Scene" on the deck, their actual living-room Hue scene named "Chill" activates — not a placeholder.
-- If no matching MCP is available, **ask the user** for the endpoints, credentials, bridge IPs, auth tokens you need. Tell them plainly what you're going to do with each (e.g. "I'll store your Hue API key in ~/StreamDeckScripts/.env — nothing outside your machine").
-
-Bake the discovered invocations into **shell scripts** via `streamdeck_create_action`. Those scripts run standalone — they don't need Claude or the MCP server to be present at press time. That's the whole point of the static authoring model.
+1. **Find configured actions first.** Call `streamdeck_find_actions` with a `query` / `plugin_name` / `plugin_uuid` for the integration (e.g. `"Home Assistant"`, `"Hue"`, `"OBS"`). Each hit's `action` field is paste-ready for `streamdeck_write_page` — it preserves private Property Inspector `Settings`. Also works for dials (`controller: "encoder"`). If you already know the source page, `streamdeck_read_page` and copy `button.raw` instead.
+2. **Synthesize only when nothing is configured.** Call `streamdeck_read_plugins` for plugin/action UUIDs and best-effort `settings_fields` (inferred from PI HTML/JS when the manifest is readable). Pass `plugin_uuid` + `action_uuid` + `settings` on write. Protected first-party Elgato plugins often lack catalog metadata — for those, ask the user to configure one button in the Stream Deck app, then re-run `find_actions`.
+3. **Scripts as last resort** for custom automation or when no Stream Deck plugin exists. If a matching MCP is available (Hue, Home Assistant, Spotify, OBS), use it to enumerate real devices/scenes, then bake invocations into shell scripts via `streamdeck_create_action`. Those scripts run standalone — they don't need Claude or the MCP server at press time.
 
 **Never inline credentials into the action scripts.** Put secrets in `~/StreamDeckScripts/.env`; source it in each generated script:
 
@@ -109,19 +107,19 @@ Icon param conventions:
 
 If an MDI name misses, the tool returns close-match suggestions. Take them — the exact right glyph for a concept is often named something slightly different (e.g. `mdi:cog` vs `mdi:gear`). `references/icons.md` has 30+ categorized exemplars.
 
-### 7. Wire actions with shell scripts
+### 7. Wire actions — reuse, then synthesize, then scripts
 
-For commands, use `streamdeck_create_action(name, command)`. It:
-- Writes an executable script to `~/StreamDeckScripts/<slug>.sh`.
-- Returns a native `com.elgato.streamdeck.system.open` action block you pass into `streamdeck_write_page`.
+**Preference order:**
+
+1. **Reuse configured plugin actions.** `streamdeck_find_actions(query="…")` → pass each hit's `action` into `streamdeck_write_page` buttons (override `title` / `icon_path` as needed). Or copy `button.raw` from `streamdeck_read_page` when you already know the source page.
+2. **Synthesize** with `plugin_uuid` + `action_uuid` + `settings` from `streamdeck_read_plugins` when no configured instance exists and you know the settings shape.
+3. **Scripts** via `streamdeck_create_action(name, command)` for custom shell automation. It writes `~/StreamDeckScripts/<slug>.sh` and returns a native Open action block.
 
 For page navigation between pages in the same profile, use `action_type: "next_page"` or `action_type: "previous_page"` on the button. For opening a URL, `command="open 'https://...'"` works on macOS; Windows uses `start`.
 
 For switching to a **different profile** on press, that's not exposed as a convenience field — build the action object explicitly with `plugin_uuid: "com.elgato.streamdeck.profile"` and the profile-switch action UUID. Most decks don't need this; if you need it, check the Elgato SDK reference.
 
-For installed third-party plugins, discover action UUIDs with `streamdeck_read_plugins`. If the user already configured the action somewhere in the Stream Deck app, use `streamdeck_read_page` on that page and copy the button's `raw` action object into the new location; this preserves plugin-specific `Settings` without guessing. If you only have the plugin manifest, you still need the correct settings shape from the user, the plugin docs, or an existing configured action.
-
-No other action types exist standalone in Phase 1. In particular: there is no "call back to Claude" action yet — pressing a key fires a shell script or switches a page, nothing else. See Phase 2 in the repo roadmap if the user asks about live/dynamic behavior.
+No other action types exist standalone in Phase 1. In particular: there is no "call back to Claude" action yet — pressing a key fires a plugin action, shell script, or page switch. See Phase 2 in the repo roadmap if the user asks about live/dynamic behavior.
 
 ### 8. Pick encoder layouts with the Phase 1 constraint in mind
 

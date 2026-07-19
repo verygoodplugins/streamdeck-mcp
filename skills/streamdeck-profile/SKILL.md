@@ -6,11 +6,26 @@ Use this skill when you need to configure Elgato Stream Deck desktop profiles wi
 
 1. Call `streamdeck_read_profiles` to discover the active profiles root and page `directory_id` values.
 2. Call `streamdeck_read_page` before editing an existing page so you can inspect the current native action objects.
-3. Call `streamdeck_read_plugins` before authoring installed plugin actions. It discovers plugin/action UUIDs from readable manifests, but does not infer property inspector settings schemas. Prefer copying configured plugin actions from `streamdeck_read_page` via `button.raw`.
-4. Use `streamdeck_create_icon` for button art. Pass `icon` with a Material Design Icons name like `mdi:cpu-64-bit`, `mdi:volume-high`, or `mdi:github` (~7400 glyphs bundled) plus `icon_color` and `bg_color` for a glyph; or pass `text` alone for a text-only icon. `icon` and `text` are mutually exclusive — set the button's `title` on `streamdeck_write_page` for labels, since Elgato overlays titles on images.
-5. Use `streamdeck_create_action` when you want a shell-command button. It creates an executable script in `~/StreamDeckScripts/` and returns a ready-to-insert Open action block.
-6. Call `streamdeck_write_page` with `directory_id` for the safest updates on existing pages.
-7. Call `streamdeck_restart_app` on macOS if the Stream Deck desktop app does not pick up changes immediately.
+3. **Reuse installed plugin actions first.** Call `streamdeck_find_actions` (by `query`, `plugin_name`, or `plugin_uuid`) to locate configured buttons/dials across profiles. Paste each hit's `action` into `streamdeck_write_page`. If you already know the source page, copy `button.raw` from `streamdeck_read_page` instead.
+4. Only when nothing is configured: call `streamdeck_read_plugins` for plugin/action UUIDs and best-effort `settings_fields`, then synthesize with `plugin_uuid` + `action_uuid` + `settings` on write.
+5. Use `streamdeck_create_icon` for button art. Pass `icon` with a Material Design Icons name like `mdi:cpu-64-bit`, `mdi:volume-high`, or `mdi:github` (~7400 glyphs bundled) plus `icon_color` and `bg_color` for a glyph; or pass `text` alone for a text-only icon. `icon` and `text` are mutually exclusive — set the button's `title` on `streamdeck_write_page` for labels, since Elgato overlays titles on images.
+6. Use `streamdeck_create_action` when you need a custom shell-command button (no matching plugin action). It creates an executable script in `~/StreamDeckScripts/` and returns a ready-to-insert Open action block.
+7. Call `streamdeck_write_page` with `directory_id` for the safest updates on existing pages.
+8. Call `streamdeck_restart_app` on macOS if the Stream Deck desktop app does not pick up changes immediately.
+
+## Reusing a found action
+
+```json
+{
+  "key": 0,
+  "title": "Office Light",
+  "action": { "...paste hit.action from streamdeck_find_actions..." }
+}
+```
+
+For dials/encoders, prefer the hit's ready-made `button` object (includes `controller`) or pass `controller: hit.controller` explicitly — otherwise write_page defaults to keypad.
+
+Example find call: `streamdeck_find_actions(query="home assistant", limit=20)`.
 
 ## Practical Notes
 
@@ -19,6 +34,7 @@ Use this skill when you need to configure Elgato Stream Deck desktop profiles wi
 - `ProfilesV2` uses opaque page directory names, so treat `directory_id` as the source of truth for updates.
 - `streamdeck_write_page` replaces the page by default because `clear_existing` defaults to `true`.
 - Button inputs can use `key` for linear indexing or `position` for native `col,row` coordinates.
+- `streamdeck_find_actions` returns a fresh `ActionID` on each hit so multi-copy pastes are safe.
 
 ## Button Shape
 
@@ -33,7 +49,7 @@ Each `buttons[]` item can use:
 }
 ```
 
-Or a raw native action object:
+Or a raw native action object (preferred for plugin reuse):
 
 ```json
 {
