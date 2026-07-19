@@ -944,7 +944,12 @@ class ProfileManager:
                 actions.items(),
                 key=lambda item: self._position_sort_key(item[0]),
             ):
-                col, row = [int(part) for part in position.split(",")]
+                if not isinstance(action, dict):
+                    continue
+                try:
+                    col, row = [int(part) for part in str(position).split(",")]
+                except ValueError:
+                    continue
                 key = (row * cols + col) if cols else col
                 states = action.get("States") or [{}]
                 state_index = min(max(int(action.get("State", 0)), 0), max(len(states) - 1, 0))
@@ -1041,7 +1046,7 @@ class ProfileManager:
         for profile_dir, profile_manifest in profiles_to_scan:
             if truncated:
                 break
-            page_refs = self._page_refs(profile_dir, profile_manifest)
+            page_refs = self._iter_page_refs_soft(profile_dir, profile_manifest)
             profile_label = str(profile_manifest.get("Name", profile_dir.stem))
             for page_ref in page_refs:
                 if truncated:
@@ -1143,6 +1148,13 @@ class ProfileManager:
                                 "action_uuid": hit_action_uuid or None,
                                 "settings": copy.deepcopy(action.get("Settings") or {}),
                                 "action": paste_action,
+                                # Paste-ready write_page button: includes controller so
+                                # encoder/dial hits land on the Encoder grid, not Keypad.
+                                "button": {
+                                    "controller": controller_lower,
+                                    "key": key,
+                                    "action": paste_action,
+                                },
                             }
                         )
 
@@ -1616,7 +1628,11 @@ class ProfileManager:
 
         matches: list[tuple[Path, dict[str, Any]]] = []
         for profile_dir in sorted(self.profiles_dir.glob("*.sdProfile")):
-            manifest = _load_json(profile_dir / "manifest.json")
+            try:
+                manifest = _load_json(profile_dir / "manifest.json")
+            except ProfileManagerError:
+                # Unrelated corrupt profiles must not block resolving a valid target.
+                continue
             if profile_id and profile_dir.stem.lower() == profile_id.lower():
                 return profile_dir, manifest
             if profile_name and str(manifest.get("Name", "")).lower() == profile_name.lower():
@@ -1643,6 +1659,98 @@ class ProfileManager:
         return self._page_refs_v2(profiles_path, profile_manifest)
 
     def _page_refs_v3(self, profiles_path: Path, profile_manifest: dict[str, Any]) -> list[PageRef]:
+        page_refs: list[PageRef] = []
+        ordered_page_ids: list[tuple[str, bool]] = []
+        pages = profile_manifest.get("Pages", {})
+        default_uuid = pages.get("Default")
+        if default_uuid:
+            ordered_page_ids.append((default_uuid, True))
+        for page_uuid in pages.get("Pages", []):
+            ordered_page_ids.append((page_uuid, False))
+
+        used: set[str] = set()
+        for page_index, (page_uuid, is_default) in enumerate(ordered_page_ids):
+            directory_id = str(page_uuid).upper()
+            manifest_path = profiles_path / directory_id / "manifest.json"
+            if not manifest_path.exists():
+                continue
+            used.add(directory_id)
+            page_refs.append(
+                self._build_page_ref(
+                    page_index=page_index,
+                    directory_id=directory_id,
+                    page_uuid=str(page_uuid).lower(),
+                    manifest_path=manifest_path,
+                    version=str(profile_manifest.get("Version", "unknown")),
+                    mapping="page-uuid",
+                    is_default=is_default,
+                    is_current=_normalize_uuid(str(page_uuid))
+                    == _normalize_uuid(str(pages.get("Current", ""))),
+                )
+            )
+
+        for manifest_path in sorted(profiles_path.glob("*/manifest.json")):
+            directory_id = manifest_path.parent.name.upper()
+            if directory_id in used:
+                continue
+            page_refs.append(
+                self._build_page_ref(
+                    page_index=len(page_refs),
+                    directory_id=directory_id,
+                    page_uuid=directory_id.lower() if _looks_like_uuid(directory_id) else None,
+                    manifest_path=manifest_path,
+                    version=str(profile_manifest.get("Version", "unknown")),
+                    mapping="unreferenced",
+                    is_default=False,
+                    is_current=False,
+                )
+            )
+
+        return page_refs
+
+    def _page_refs_v2(self, profiles_path: Path, profile_manifest: dict[str, Any]) -> list[PageRef]:
+        page_refs: list[PageRef] = []
+        entries = sorted(
+            (Path(entry.path) for entry in os.scandir(profiles_path) if entry.is_dir()),
+            key=lambda path: path.name.lower(),
+        )
+        for page_index, page_dir in enumerate(entries):
+            page_refs.append(
+                self._build_page_ref(
+                    page_index=page_index,
+                    directory_id=page_dir.name,
+                    page_uuid=None,
+                    manifest_path=page_dir / "manifest.json",
+                    version=str(profile_manifest.get("Version", "unknown")),
+                    mapping="directory-order",
+                    is_default=False,
+                    is_current=False,
+                )
+            )
+        return page_refs
+
+    def _iter_page_refs_soft(
+        self, profile_dir: Path, profile_manifest: dict[str, Any]
+    ) -> list[PageRef]:
+        """Like ``_page_refs``, but skip missing/corrupt page manifests.
+
+        Used by ``find_actions`` so one bad page cannot abort a multi-page search.
+        Direct read/write paths keep strict ``_page_refs`` so invalid JSON surfaces
+        as a clear error for the targeted page.
+        """
+
+        profiles_path = profile_dir / "Profiles"
+        if not profiles_path.exists():
+            return []
+
+        version = str(profile_manifest.get("Version", "2.0"))
+        if version.startswith("3"):
+            return self._page_refs_v3_soft(profiles_path, profile_manifest)
+        return self._page_refs_v2_soft(profiles_path, profile_manifest)
+
+    def _page_refs_v3_soft(
+        self, profiles_path: Path, profile_manifest: dict[str, Any]
+    ) -> list[PageRef]:
         page_refs: list[PageRef] = []
         ordered_page_ids: list[tuple[str, bool]] = []
         pages = profile_manifest.get("Pages", {})
@@ -1692,7 +1800,9 @@ class ProfileManager:
 
         return page_refs
 
-    def _page_refs_v2(self, profiles_path: Path, profile_manifest: dict[str, Any]) -> list[PageRef]:
+    def _page_refs_v2_soft(
+        self, profiles_path: Path, profile_manifest: dict[str, Any]
+    ) -> list[PageRef]:
         page_refs: list[PageRef] = []
         entries = sorted(
             (Path(entry.path) for entry in os.scandir(profiles_path) if entry.is_dir()),

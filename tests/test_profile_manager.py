@@ -777,6 +777,8 @@ def test_find_actions_finds_encoder_dials(sample_profiles_plus_xl: Path, tmp_pat
     assert hit["plugin_uuid"] == "com.elgato.wave-link"
     assert hit["settings"] == {"channelId": "mic"}
     assert hit["action"]["ActionID"] != "dial-volume"
+    assert hit["button"]["controller"] == "encoder"
+    assert hit["button"]["action"]["UUID"] == hit["action"]["UUID"]
 
 
 def test_find_actions_scopes_profile_and_respects_limit(
@@ -889,6 +891,63 @@ def test_find_actions_paste_into_write_page(sample_profiles_v3: Path, tmp_path: 
     # write_page mints a fresh ActionID even when reusing a find_actions hit.
     assert pasted["action_id"] != "ha-light-action"
     assert pasted["action_id"] != hit["action"]["ActionID"]
+
+
+def test_read_page_skips_malformed_action_keys(sample_profiles_v3: Path, tmp_path: Path) -> None:
+    page_path = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        / "manifest.json"
+    )
+    page_manifest = json.loads(page_path.read_text())
+    page_manifest["Controllers"][0]["Actions"]["bad-slot"] = {
+        "ActionID": "broken",
+        "Name": "Broken",
+        "Plugin": {"Name": "X", "UUID": "com.example.x", "Version": "1"},
+        "Settings": {},
+        "State": 0,
+        "States": [{}],
+        "UUID": "com.example.x.action",
+    }
+    page_path.write_text(json.dumps(page_manifest))
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    page = manager.read_page(
+        profile_name="Default Profile",
+        directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+    )
+    assert all(button["position"] != "bad-slot" for button in page["buttons"])
+    assert any(button["title"] == "Deploy" for button in page["buttons"])
+
+
+def test_read_page_surfaces_corrupt_manifest_for_direct_lookup(
+    sample_profiles_v3: Path, tmp_path: Path
+) -> None:
+    bad_page = (
+        sample_profiles_v3
+        / "PROFILE-ONE.sdProfile"
+        / "Profiles"
+        / "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+        / "manifest.json"
+    )
+    bad_page.write_text("{not-json")
+
+    manager = ProfileManager(
+        profiles_dir=sample_profiles_v3,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+    with pytest.raises(ProfileManagerError, match="Invalid JSON|Missing file"):
+        manager.read_page(
+            profile_name="Default Profile",
+            directory_id="BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+        )
 
 
 def test_find_actions_empty_returns_hint(sample_profiles_v3: Path, tmp_path: Path) -> None:

@@ -23,6 +23,8 @@ Use this skill when you need to configure Elgato Stream Deck desktop profiles wi
 }
 ```
 
+For dials/encoders, prefer the hit's ready-made `button` object (includes `controller`) or pass `controller: hit.controller` explicitly — otherwise write_page defaults to keypad.
+
 Example find call: `streamdeck_find_actions(query="home assistant", limit=20)`.
 
 ## Practical Notes
