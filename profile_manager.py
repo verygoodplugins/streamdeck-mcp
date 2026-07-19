@@ -952,7 +952,13 @@ class ProfileManager:
                     continue
                 key = (row * cols + col) if cols else col
                 states = action.get("States") or [{}]
-                state_index = min(max(int(action.get("State", 0)), 0), max(len(states) - 1, 0))
+                try:
+                    state_index = min(
+                        max(int(action.get("State", 0)), 0),
+                        max(len(states) - 1, 0),
+                    )
+                except (TypeError, ValueError):
+                    state_index = 0
                 active_state = states[state_index] if states else {}
                 buttons.append(
                     {
@@ -969,7 +975,9 @@ class ProfileManager:
                         "image": active_state.get("Image"),
                         "settings": action.get("Settings", {}),
                         "show_title": active_state.get("ShowTitle"),
-                        "raw": action,
+                        "raw": self._absolutize_action_assets(
+                            copy.deepcopy(action), page_ref.directory_path
+                        ),
                     }
                 )
 
@@ -1089,10 +1097,13 @@ class ProfileManager:
                         key = (row * cols + col) if cols else col
 
                         states = action.get("States") or [{}]
-                        state_index = min(
-                            max(int(action.get("State", 0)), 0),
-                            max(len(states) - 1, 0),
-                        )
+                        try:
+                            state_index = min(
+                                max(int(action.get("State", 0)), 0),
+                                max(len(states) - 1, 0),
+                            )
+                        except (TypeError, ValueError):
+                            state_index = 0
                         active_state = states[state_index] if states else {}
                         plugin = action.get("Plugin") or {}
                         hit_plugin_uuid = str(plugin.get("UUID") or "")
@@ -1631,7 +1642,9 @@ class ProfileManager:
             try:
                 manifest = _load_json(profile_dir / "manifest.json")
             except ProfileManagerError:
-                # Unrelated corrupt profiles must not block resolving a valid target.
+                # Targeted profile_id must surface the real JSON error, not "not found".
+                if profile_id and profile_dir.stem.lower() == profile_id.lower():
+                    raise
                 continue
             if profile_id and profile_dir.stem.lower() == profile_id.lower():
                 return profile_dir, manifest
@@ -1997,7 +2010,10 @@ class ProfileManager:
             action["ActionID"] = str(uuid.uuid4())
 
         states = copy.deepcopy(action.get("States") or [{}])
-        state_index = min(max(int(action.get("State", 0)), 0), max(len(states) - 1, 0))
+        try:
+            state_index = min(max(int(action.get("State", 0)), 0), max(len(states) - 1, 0))
+        except (TypeError, ValueError):
+            state_index = 0
         state_data = copy.deepcopy(states[state_index] or {})
 
         if button.get("title") is not None:
