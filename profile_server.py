@@ -954,7 +954,7 @@ async def main() -> None:
     """Run the profile writer MCP server."""
 
     logger.info("Starting Stream Deck Profile Writer MCP server")
-    install_stdio_parent_watchdog('STREAMDECK_PARENT_WATCHDOG_S')
+    install_stdio_parent_watchdog("STREAMDECK_PARENT_WATCHDOG_S")
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 

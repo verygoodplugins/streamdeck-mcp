@@ -1330,7 +1330,7 @@ async def main() -> None:
     # Capture before any await — os.getppid() is dynamic.
     parent_pid = os.getppid()
     logger.info("Starting Stream Deck MCP server")
-    install_stdio_parent_watchdog('STREAMDECK_PARENT_WATCHDOG_S', parent_pid=parent_pid)
+    install_stdio_parent_watchdog("STREAMDECK_PARENT_WATCHDOG_S", parent_pid=parent_pid)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
