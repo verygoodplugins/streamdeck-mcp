@@ -7,9 +7,9 @@ https://github.com/verygoodplugins/streamdeck-mcp
 """
 
 import asyncio
-import os
 import json
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -19,8 +19,9 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from parent_watchdog import install_stdio_parent_watchdog
 from mcp.types import TextContent, Tool
+
+from parent_watchdog import install_stdio_parent_watchdog
 
 # Configure logging
 logging.basicConfig(

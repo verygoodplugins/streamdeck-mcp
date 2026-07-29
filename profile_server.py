@@ -16,7 +16,6 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from parent_watchdog import install_stdio_parent_watchdog
 from mcp.types import (
     CallToolResult,
     GetPromptResult,
@@ -27,6 +26,7 @@ from mcp.types import (
     Tool,
 )
 
+from parent_watchdog import install_stdio_parent_watchdog
 from profile_manager import (
     PageNotFoundError,
     ProfileManager,
