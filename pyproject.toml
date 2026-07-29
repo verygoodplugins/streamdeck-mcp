@@ -48,7 +48,7 @@ Issues = "https://github.com/verygoodplugins/streamdeck-mcp/issues"
 name = "io.github.verygoodplugins/streamdeck-mcp"
 
 [tool.setuptools]
-py-modules = ["profile_manager", "profile_server", "server", "mdi_icons", "install_skill"]
+py-modules = ["profile_manager", "profile_server", "server", "mdi_icons", "install_skill", "parent_watchdog"]
 packages = ["streamdeck_assets", "streamdeck_plugin"]
 
 [tool.setuptools.package-data]
