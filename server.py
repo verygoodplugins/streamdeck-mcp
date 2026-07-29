@@ -18,6 +18,7 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
+from parent_watchdog import install_stdio_parent_watchdog
 from mcp.types import TextContent, Tool
 
 # Configure logging
@@ -1325,6 +1326,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 async def main() -> None:
     """Run the MCP server."""
     logger.info("Starting Stream Deck MCP server")
+    install_stdio_parent_watchdog('STREAMDECK_PARENT_WATCHDOG_S')
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
