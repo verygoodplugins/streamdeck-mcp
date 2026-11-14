@@ -6,19 +6,19 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
-    "@remotion/cli": "4.0.468",
+    "@remotion/cli": "4.0.543",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "remotion": "4.0.468"
+    "remotion": "4.0.543"
   },
   "devDependencies": {
-    "@remotion/eslint-config-flat": "4.0.468",
+    "@remotion/eslint-config-flat": "4.0.543",
     "@types/react": "19.2.7",
     "@types/web": "0.0.166",
-    "eslint": "9.19.0",
+    "eslint": "9.39.5",
     "prettier": "3.8.1",
     "typescript": "5.9.3",
-    "vitest": "^4.1.7"
+    "vitest": "4.1.12"
   },
   "scripts": {
     "dev": "remotion studio",
@@ -35,5 +35,10 @@
   },
   "sideEffects": [
     "*.css"
-  ]
+  ],
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.1"
+    }
+  }
 }
