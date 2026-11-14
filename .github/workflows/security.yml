@@ -42,7 +42,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: pip install pip-audit 'setuptools>=84.1.0'
 
       - name: Install package dependencies
         run: pip install -e .
@@ -65,5 +65,5 @@ jobs:
         run: pip install bandit
 
       - name: Run bandit
-        run: bandit -r . -x .venv,tests -ll
+        run: bandit -r . -x ./.venv -ll
         continue-on-error: true

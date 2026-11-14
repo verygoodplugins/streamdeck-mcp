@@ -3,6 +3,7 @@ Tests for the Stream Deck profile-writer MCP server surface.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -19,7 +20,9 @@ async def test_profile_server_exposes_read_plugins_tool() -> None:
 
 
 @pytest.mark.asyncio
-async def test_profile_server_read_plugins_calls_manager(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_profile_server_read_plugins_calls_manager(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     calls = {}
 
     class StubManager:
@@ -27,7 +30,7 @@ async def test_profile_server_read_plugins_calls_manager(monkeypatch: pytest.Mon
             calls["plugin_id"] = plugin_id
             calls["include_raw_manifest"] = include_raw_manifest
             return {
-                "plugins_dir": "/tmp/plugins",
+                "plugins_dir": str(tmp_path / "plugins"),
                 "plugin_count": 1,
                 "plugins": [{"plugin_uuid": "com.example.plugin"}],
             }
@@ -41,6 +44,7 @@ async def test_profile_server_read_plugins_calls_manager(monkeypatch: pytest.Mon
 
     payload = json.loads(response[0].text)
     assert calls == {"plugin_id": "com.example.plugin", "include_raw_manifest": True}
+    assert payload["plugins_dir"] == str(tmp_path / "plugins")
     assert payload["plugins"][0]["plugin_uuid"] == "com.example.plugin"
 
 
