@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/verygoodplugins/streamdeck-mcp/compare/v0.3.0...v0.4.0) (2026-11-14)
+
+
+### Features
+
+* **profile:** add streamdeck_find_actions for plugin reuse discovery ([#61](https://github.com/verygoodplugins/streamdeck-mcp/issues/61)) ([dd3e58d](https://github.com/verygoodplugins/streamdeck-mcp/commit/dd3e58da3199d0e1de8d6f43cb7595e54cfa5f76))
+* **profile:** infer plugin PI settings and add Remotion trailer ([#59](https://github.com/verygoodplugins/streamdeck-mcp/issues/59)) ([9d7c66b](https://github.com/verygoodplugins/streamdeck-mcp/commit/9d7c66b1980b90e9c059823a950584f9ed99a00f))
+
+
+### Bug Fixes
+
+* **ci:** forward Dependabot app credentials ([#78](https://github.com/verygoodplugins/streamdeck-mcp/issues/78)) ([a1556f3](https://github.com/verygoodplugins/streamdeck-mcp/commit/a1556f3b652965aa87146560a4741c307af31d54))
+* **ci:** resolve security scan findings ([#79](https://github.com/verygoodplugins/streamdeck-mcp/issues/79)) ([c9ef62a](https://github.com/verygoodplugins/streamdeck-mcp/commit/c9ef62a3890661cee9cac9bb8180596a19274af4))
+* **deps:** refresh vulnerable Python lockfile packages ([#80](https://github.com/verygoodplugins/streamdeck-mcp/issues/80)) ([fafee64](https://github.com/verygoodplugins/streamdeck-mcp/commit/fafee64293d4d7a743d3b025eda01e19a75147ed))
+* **deps:** refresh vulnerable trailer dependencies ([#81](https://github.com/verygoodplugins/streamdeck-mcp/issues/81)) ([f3e1135](https://github.com/verygoodplugins/streamdeck-mcp/commit/f3e1135c0ea7ea8ebe3067725e3910c6070994de))
+* **usb:** select stream deck by serial ([#45](https://github.com/verygoodplugins/streamdeck-mcp/issues/45)) ([67cbe4e](https://github.com/verygoodplugins/streamdeck-mcp/commit/67cbe4eccd32053996fc558ba76eb70ea412bbe2))
+
+
+### Documentation
+
+* Lead README with use cases and multi-client install ([#37](https://github.com/verygoodplugins/streamdeck-mcp/issues/37)) ([9cab555](https://github.com/verygoodplugins/streamdeck-mcp/commit/9cab5558c1a6baed38f383c6c8e98da007c2de37))
+* **readme:** polish GitHub landing page ([#47](https://github.com/verygoodplugins/streamdeck-mcp/issues/47)) ([29bb8bc](https://github.com/verygoodplugins/streamdeck-mcp/commit/29bb8bcfd01e92560c69b8819baa5685f1c871ea))
+
 ## [0.3.0](https://github.com/verygoodplugins/streamdeck-mcp/compare/v0.2.0...v0.3.0) (2026-04-28)
 
 
