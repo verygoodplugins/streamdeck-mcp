@@ -69,7 +69,9 @@ MODEL_LAYOUTS: dict[str, dict[str, tuple[int, int]]] = {
     "20GBA9901": {KEYPAD: (5, 3)},
     # Stream Deck MK.2 (15 keys)
     "20GAA9901": {KEYPAD: (5, 3)},
-    # Stream Deck XL (32 keys)
+    # Stream Deck XL (32 keys). Both IDs appear in Elgato app profile manifests;
+    # 20GAT9901 was observed on Windows with Stream Deck app 7.6.1.
+    "20GAT9901": {KEYPAD: (8, 4)},
     "20GAT9902": {KEYPAD: (8, 4)},
     # Stream Deck XL rev2 (32 keys)
     "20GBA9902": {KEYPAD: (8, 4)},
@@ -95,6 +97,7 @@ MODEL_LAYOUTS: dict[str, dict[str, tuple[int, int]]] = {
 MODEL_NAMES: dict[str, str] = {
     "20GBA9901": "Stream Deck Original",
     "20GAA9901": "Stream Deck MK.2",
+    "20GAT9901": "Stream Deck XL",
     "20GAT9902": "Stream Deck XL",
     "20GBA9902": "Stream Deck XL rev2",
     "20GBX9901": "Stream Deck + XL",

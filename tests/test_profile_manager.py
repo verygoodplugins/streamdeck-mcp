@@ -2140,6 +2140,30 @@ def test_list_profiles_marks_unknown_models_clearly(tmp_path: Path) -> None:
     assert profiles[0]["device"]["ModelName"] == "Unknown Stream Deck model (20GZ9999)"
 
 
+@pytest.mark.parametrize("model_id", ["20GAT9901", "20GAT9902"])
+def test_stream_deck_xl_model_ids_resolve_to_8x4(model_id: str, tmp_path: Path) -> None:
+    """Both XL product IDs must map to the 8x4 keypad. Without an entry, an empty
+    page falls back to the 5x3 default and 17 of the 32 keys cannot be written."""
+
+    profiles_dir = tmp_path / "ProfilesV3"
+    profile_dir = profiles_dir / "XL.sdProfile"
+    profile_manifest = {
+        "Device": {"Model": model_id, "UUID": "@(1)"},
+        "Name": "XL",
+        "Pages": {"Current": None, "Default": None, "Pages": []},
+        "Version": "3.0",
+    }
+    _write_json(profile_dir / "manifest.json", profile_manifest)
+    manager = ProfileManager(
+        profiles_dir=profiles_dir,
+        scripts_dir=tmp_path / "scripts",
+        generated_icons_dir=tmp_path / "icons",
+    )
+
+    assert manager.list_profiles()[0]["device"]["ModelName"] == "Stream Deck XL"
+    assert manager._resolve_layout(profile_manifest) == (8, 4)
+
+
 def test_create_icons_generates_batch_in_one_call(tmp_path: Path) -> None:
     """Batch icon creation — the primary optimization behind this round of
     changes. 32-key decks authored with one icon per MCP call timed out in
