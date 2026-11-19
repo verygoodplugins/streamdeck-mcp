@@ -466,9 +466,14 @@ def is_stream_deck_app_running() -> bool:
     if sys.platform != "darwin":
         return False
 
+    # Scope to the current user: on a Mac with several logins (fast user
+    # switching) each login runs its own copy of the app against its own
+    # ProfilesV3. Another user's instance cannot overwrite our profiles, and
+    # we cannot quit it, so it must not count as "running".
+    uid = str(os.getuid())
     for name in STREAM_DECK_APP_PROCESS_NAMES:
         result = subprocess.run(
-            ["pgrep", "-x", name],
+            ["pgrep", "-x", "-u", uid, name],
             capture_output=True,
             text=True,
             check=False,
@@ -511,7 +516,7 @@ def stop_stream_deck_app(*, graceful_timeout: float = 3.0) -> dict[str, Any]:
     if is_stream_deck_app_running():
         for name in STREAM_DECK_APP_PROCESS_NAMES:
             result = subprocess.run(
-                ["killall", name],
+                ["killall", "-u", str(os.getuid()), name],
                 capture_output=True,
                 text=True,
                 check=False,

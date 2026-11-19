@@ -4,6 +4,8 @@ Tests for the Stream Deck desktop profile manager.
 
 import json
 import shlex
+import subprocess
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,6 +17,7 @@ from profile_manager import (
     ProfileManagerError,
     ProfileValidationError,
     StreamDeckAppRunningError,
+    is_stream_deck_app_running,
 )
 
 
@@ -2324,3 +2327,31 @@ def test_install_skill_marks_overwrote_when_target_exists(tmp_path) -> None:
         install_skill.SKILLS_ROOT = original_skills_root
         if target_parent.exists():
             shutil.rmtree(target_parent)
+
+
+def test_is_stream_deck_app_running_scopes_pgrep_to_current_user() -> None:
+    """Another macOS login's Stream Deck instance must not count as running."""
+    import os
+
+    import profile_manager
+
+    # `is_stream_deck_app_running` here is the real function, bound at import
+    # time before the autouse fixture replaced the module attribute.
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="")
+
+    with (
+        patch.object(profile_manager.sys, "platform", "darwin"),
+        patch("profile_manager.subprocess.run", side_effect=fake_run),
+    ):
+        assert is_stream_deck_app_running() is False
+
+    assert calls, "expected pgrep to be invoked"
+    for cmd in calls:
+        assert cmd[0] == "pgrep"
+        assert "-u" in cmd
+        assert cmd[cmd.index("-u") + 1] == str(os.getuid())
