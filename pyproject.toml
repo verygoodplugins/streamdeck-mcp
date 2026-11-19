@@ -48,7 +48,7 @@ Issues = "https://github.com/verygoodplugins/streamdeck-mcp/issues"
 name = "io.github.verygoodplugins/streamdeck-mcp"
 
 [tool.setuptools]
-py-modules = ["profile_manager", "profile_server", "server", "mdi_icons", "install_skill"]
+py-modules = ["profile_manager", "profile_server", "server", "mdi_icons", "install_skill", "parent_watchdog"]
 packages = ["streamdeck_assets", "streamdeck_plugin"]
 
 [tool.setuptools.package-data]
@@ -75,6 +75,9 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Skill docs contain intentional example formatting; ruff format rewrites fenced
+# Python snippets incorrectly (e.g. kwargs → tuples). Keep assets out of format/lint.
+extend-exclude = ["streamdeck_assets"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]

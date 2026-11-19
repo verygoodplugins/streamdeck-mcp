@@ -9,6 +9,7 @@ https://github.com/verygoodplugins/streamdeck-mcp
 import asyncio
 import json
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -19,6 +20,8 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
+
+from parent_watchdog import install_stdio_parent_watchdog
 
 # Configure logging
 logging.basicConfig(
@@ -1324,7 +1327,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
 async def main() -> None:
     """Run the MCP server."""
+    # Capture before any await — os.getppid() is dynamic.
+    parent_pid = os.getppid()
     logger.info("Starting Stream Deck MCP server")
+    install_stdio_parent_watchdog("STREAMDECK_PARENT_WATCHDOG_S", parent_pid=parent_pid)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
